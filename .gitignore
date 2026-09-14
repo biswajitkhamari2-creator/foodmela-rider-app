@@ -93,3 +93,6 @@ test/
 
 # Real Firebase config (stray space in filename) - never commit
 android/google-services  org.json
+
+# Real Firebase config (stray space in filename) - never commit
+android/google-services  org.json

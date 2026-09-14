@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/services/firebase_service.dart';
+import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/rider_dashboard_screen.dart';
@@ -25,6 +26,9 @@ void main() async {
   try {
     await Permission.notification.request();
     await FirebaseService.initialize();
+    // Full-screen incoming-order call UI (foreground FCM + tap-to-open).
+    IncomingOrderCall.navigatorKey = riderNavigatorKeyAlt;
+    IncomingOrderCall.ensureInitialized();
   } catch (e) {
     debugPrint('Init notice: $e');
   }

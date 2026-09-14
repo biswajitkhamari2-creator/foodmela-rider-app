@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "com.foodmela.driver"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -32,7 +32,7 @@ android {
     defaultConfig {
         applicationId = "com.foodmela.driver"
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 5
         versionName = "2.0.0"
         multiDexEnabled = true

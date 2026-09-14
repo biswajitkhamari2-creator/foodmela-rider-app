@@ -6,6 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/incoming_call_listener.dart';
+import 'package:food_track/core/services/firebase_service.dart';
 
 class ActiveDeliveryScreen extends StatefulWidget {
   final String orderId;
@@ -14,6 +18,10 @@ class ActiveDeliveryScreen extends StatefulWidget {
   final String address;
   final String itemsSummary;
   final double totalAmount;
+  // Customer's live GPS pin from the order doc (deliveryLat/deliveryLng).
+  // Null when the order was placed without a GPS fix — falls back to address.
+  final double? deliveryLat;
+  final double? deliveryLng;
 
   const ActiveDeliveryScreen({
     super.key,
@@ -23,13 +31,32 @@ class ActiveDeliveryScreen extends StatefulWidget {
     required this.address,
     required this.itemsSummary,
     required this.totalAmount,
+    this.deliveryLat,
+    this.deliveryLng,
+    this.riderId = '',
   });
+
+  /// Rider identity for masked-call auth (partnerId or phone).
+  final String riderId;
 
   @override
   State<ActiveDeliveryScreen> createState() => _ActiveDeliveryScreenState();
 }
 
-class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
+class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
+    with IncomingCallListener {
+  // ── Incoming masked-call listening (rider side) ──
+  @override
+  String get listenOrderId => widget.orderId;
+
+  @override
+  String get listenMyId => widget.riderId.isNotEmpty
+      ? widget.riderId
+      : (_orderData?['riderId'] as String? ?? '');
+
+  @override
+  String get listenMyRole => 'rider';
+
   int _currentStep = 0;
   final TextEditingController _otpController = TextEditingController();
   Map<String, dynamic>? _orderData;
@@ -38,6 +65,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   // Rider LIVE GPS → same order doc (customer map reads these, no refresh).
   StreamSubscription<Position>? _riderGpsSub;
   Position? _riderPos;
+  // GPS sharing status shown on screen — rider knows if customer can see them.
+  // 'starting' → 'active' → 'off' (permission/service denied).
+  String _gpsStatus = 'starting';
 
   final List<String> _stepTitles = [
     'Reached Pickup Store',
@@ -57,19 +87,72 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     super.initState();
     _listenToOrderCancellation();
     _startRiderLiveGps();
+    // Masked-call readiness: subscribe to incoming-call pushes + publish my
+    // FCM token so the customer can ring me (number stays hidden).
+    FirebaseService.subscribeToOrderCalls(widget.orderId);
+    FirebaseService.saveCallToken(orderId: widget.orderId, role: 'rider');
   }
 
   /// Rider's ACTUAL device GPS → order doc (riderLat/riderLng/riderUpdatedAt).
   /// Best accuracy, distance-filtered (~10m) so battery stays sensible.
   /// Customer map listens to the same doc — marker moves with no refresh.
+  /// Status is shown on screen so the rider knows if sharing is live or off.
   Future<void> _startRiderLiveGps() async {
+    void setGps(String s) {
+      if (mounted) setState(() => _gpsStatus = s);
+    }
+
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) return;
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        debugPrint('Rider GPS: location service off');
+        setGps('off');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: FoodMelaaColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text('GPS is OFF — customer cannot see your live location. Please enable location.',
+                style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
+          ));
+        }
+        return;
+      }
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         debugPrint('Rider GPS permission denied — live marker off');
+        setGps('off');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: FoodMelaaColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text('Location permission denied — customer cannot track you. Enable in Settings.',
+                style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
+          ));
+        }
         return;
+      }
+      // Immediate first fix so the customer map pins instantly, then stream.
+      try {
+        final first = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.best,
+              timeLimit: Duration(seconds: 8)),
+        ).timeout(const Duration(seconds: 10));
+        _riderPos = first;
+        setGps('active');
+        try {
+          await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+            'riderLat': first.latitude,
+            'riderLng': first.longitude,
+            'riderUpdatedAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Rider GPS first write: $e');
+        }
+      } catch (e) {
+        debugPrint('Rider GPS first fix: $e');
       }
       const settings = LocationSettings(
         accuracy: LocationAccuracy.best,
@@ -78,6 +161,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
       _riderGpsSub = Geolocator.getPositionStream(locationSettings: settings).listen(
         (pos) async {
           _riderPos = pos;
+          if (_gpsStatus != 'active') setGps('active');
           try {
             await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
               'riderLat': pos.latitude,
@@ -88,10 +172,14 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
             debugPrint('Rider GPS write: $e');
           }
         },
-        onError: (e) => debugPrint('Rider GPS stream: $e'),
+        onError: (e) {
+          debugPrint('Rider GPS stream: $e');
+          setGps('off');
+        },
       );
     } catch (e) {
       debugPrint('Rider GPS start: $e');
+      if (mounted) setState(() => _gpsStatus = 'off');
     }
   }
 
@@ -127,6 +215,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
 
   @override
   void dispose() {
+    FirebaseService.unsubscribeFromOrderCalls(widget.orderId);
     _orderSubscription?.cancel();
     _riderGpsSub?.cancel();
     _otpController.dispose();
@@ -188,6 +277,30 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
         ...await _riderGpsPatch(),
       });
     } catch (e) { debugPrint('Firestore update: $e'); }
+  }
+
+  /// Opens the customer's LIVE GPS pin in Google Maps navigation.
+  /// Falls back to an address search when the order has no GPS fix.
+  Future<void> _openCustomerLocationInMaps() async {
+    final lat = widget.deliveryLat ?? (_orderData?['deliveryLat'] as num?)?.toDouble();
+    final lng = widget.deliveryLng ?? (_orderData?['deliveryLng'] as num?)?.toDouble();
+    final Uri uri;
+    if (lat != null && lng != null) {
+      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    } else {
+      uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(widget.address)}');
+    }
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (e) {
+      debugPrint('Maps launch: $e');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open Maps', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
   }
 
   void _showOtpDialog() {
@@ -328,7 +441,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
           Container(
             margin: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, borderRadius: BorderRadius.circular(12)),
-            child: IconButton(icon: const Icon(Icons.phone_rounded, color: FoodMelaaColors.riderPrimary, size: 20), tooltip: 'Call Customer', onPressed: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Calling ${widget.customerName}: ${widget.customerPhone}', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
+            child: IconButton(icon: const Icon(Icons.phone_rounded, color: FoodMelaaColors.riderPrimary, size: 20), tooltip: 'Call Customer', onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'Customer')),
           ),
         ],
       ),
@@ -349,14 +462,30 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
                   Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(widget.address, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    Text(
-                        _riderPos != null
-                            ? '🚴 Live GPS active — customer sees you move'
-                            : 'Tap GPS to navigate',
-                        style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.8))),
+                    Row(
+                      children: [
+                        if ((widget.deliveryLat ?? (_orderData?['deliveryLat'] as num?)?.toDouble()) != null &&
+                            (widget.deliveryLng ?? (_orderData?['deliveryLng'] as num?)?.toDouble()) != null)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(color: const Color(0xFF059669), borderRadius: BorderRadius.circular(6)),
+                            child: Text('📍 LIVE GPS', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                          ),
+                        Expanded(
+                          child: Text(
+                              _gpsStatus == 'active'
+                                  ? '🚴 Live GPS active — customer sees you move'
+                                  : _gpsStatus == 'off'
+                                      ? '⚠️ GPS OFF — customer cannot track you'
+                                      : '📡 Starting live GPS…',
+                              style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.8))),
+                        ),
+                      ],
+                    ),
                   ])),
                   const SizedBox(width: 10),
-                  ElevatedButton.icon(onPressed: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening Maps', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))), icon: const Icon(Icons.near_me_rounded, size: 14, color: FoodMelaaColors.riderPrimary), label: Text('GPS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: FoodMelaaColors.riderPrimary)), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
+                  ElevatedButton.icon(onPressed: _openCustomerLocationInMaps, icon: const Icon(Icons.near_me_rounded, size: 14, color: FoodMelaaColors.riderPrimary), label: Text('GPS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: FoodMelaaColors.riderPrimary)), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
                 ],
               ),
             ),
@@ -405,8 +534,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
                     children: [
                       Container(width: 44, height: 44, decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, shape: BoxShape.circle), child: Center(child: Text(widget.customerName.isNotEmpty ? widget.customerName[0].toUpperCase() : 'C', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: FoodMelaaColors.riderPrimary)))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)), GestureDetector(onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Calling ${widget.customerPhone}', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))), child: Text(widget.customerPhone, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.riderPrimary, decoration: TextDecoration.underline, decorationColor: FoodMelaaColors.riderPrimary)))])),
-                      Container(decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Calling ${widget.customerPhone}', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))))),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'Customer'), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.riderPrimary, decoration: TextDecoration.underline, decorationColor: FoodMelaaColors.riderPrimary)))])),
+                      Container(decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'Customer'))),
                     ],
                   ),
                   const SizedBox(height: 14),

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"image\\\\|price\\\\|notification\\\\|order\\\\|rider\\\\|cart\")",
+      "Bash(flutter analyze *)"
+    ]
+  }
+}

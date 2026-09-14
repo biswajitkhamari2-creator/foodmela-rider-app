@@ -2,10 +2,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/services/firebase_service.dart';
+import 'package:food_track/core/services/incoming_order_call.dart';
+import 'package:food_track/core/services/native_order_alert.dart';
+import 'package:food_track/core/services/order_ringtone_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/call_models.dart';
+import 'package:food_track/features/calling/call_service.dart';
+import 'package:food_track/features/calling/incoming_call_screen.dart';
 import 'package:food_track/features/rider/active_delivery_screen.dart';
+import 'package:food_track/features/rider/incoming_order_screen.dart';
+import 'package:food_track/features/rider/order_permission_setup_dialog.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 
 // ─── Category helpers (mirrors FirebaseService helpers) ─────────────────────
@@ -49,12 +59,43 @@ class RiderDashboardScreen extends StatefulWidget {
   State<RiderDashboardScreen> createState() => _RiderDashboardScreenState();
 }
 
-class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
+class _RiderDashboardScreenState extends State<RiderDashboardScreen>
+    with WidgetsBindingObserver {
   final Set<String> _notifiedOrderIds = {};
   final Set<String> _rejectedOrderIds = {}; // Local reject — hides card until refresh
   final Set<String> _acceptingOrderIds = {}; // Prevent double-tap
+
+  /// Persisted notified IDs — survives restarts so old orders NEVER re-ring.
+  /// Pruned to recent 200 to bound storage.
+  Future<void> _loadNotifiedIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('rider_notified_orders') ?? [];
+      _notifiedOrderIds.addAll(saved);
+      // Also restore claimed (accepted-but-echo-pending across restart)
+      final claimed = prefs.getStringList('rider_claimed_orders') ?? [];
+      _claimedOrderIds.addAll(claimed);
+    } catch (_) {}
+  }
+
+  Future<void> _saveNotifiedIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final n = _notifiedOrderIds.toList();
+      await prefs.setStringList(
+          'rider_notified_orders', n.length > 200 ? n.sublist(n.length - 200) : n);
+      final c = _claimedOrderIds.toList();
+      await prefs.setStringList(
+          'rider_claimed_orders', c.length > 200 ? c.sublist(c.length - 200) : c);
+    } catch (_) {}
+  }
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
   bool _isOnline = true;
+  // ── Global incoming-call listening (rider side) ──────────────────────────
+  // Dashboard watches MY active deliveries for ringing invites, so the call
+  // rings even when ActiveDeliveryScreen isn't open. One sub per order.
+  final Map<String, StreamSubscription<List<CallInvite>>> _callSubs = {};
+  final Set<String> _shownCallIds = {};
 
   String get _riderName => widget.riderData?['name'] as String? ?? 'Delivery Partner';
   String get _riderPartnerId => widget.riderData?['partnerId'] as String? ?? '';
@@ -62,18 +103,155 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
   String get _riderEmail => widget.riderData?['email'] as String? ?? '';
   String get _riderId => _riderPartnerId.isNotEmpty ? _riderPartnerId : (_riderPhone.isNotEmpty ? _riderPhone : 'rider');
 
+  /// True once the OS confirms full-screen alerts are allowed. Starts false
+  /// so the banner shows; set true when granted (banner hides itself).
+  bool _fullScreenGranted = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadNotifiedIds();
     _attachOrdersListenerWithRetry();
     // Re-subscribe to FCM topic on every dashboard init (covers re-login after logout)
     FirebaseService.subscribeToRiderNotifications();
+    _refreshFullScreenState();
+    // Permission is MUST for all riders (new + existing): if not granted,
+    // ask upfront on every dashboard open until granted — new orders ring
+    // like a WhatsApp call only with this ON.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _askFullScreenPermissionMust();
+    });
+  }
+
+  /// Mandatory full-screen permission prompt for EVERY rider. Shows on each
+  /// dashboard open until granted. UNCONDITIONAL — the native check returns
+  /// true even while the OS still blocks full-screen, so never gate on it.
+  /// ALLOW opens the exact Settings page; LATER keeps the yellow banner.
+  /// Skipped only when the rider granted in THIS session (no nagging).
+  bool _askedMustThisSession = false;
+  Future<void> _askFullScreenPermissionMust() async {
+    if (!mounted || _askedMustThisSession) return;
+    _askedMustThisSession = true;
+    await OrderPermissionSetupDialog.checkAndPrompt(context);
+    if (mounted) {
+      _refreshFullScreenState();
+    }
+  }
+
+  /// Re-check every time the app returns to foreground — covers the user
+  /// granting the permission in Settings after tapping ENABLE.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshFullScreenState();
+    }
+  }
+
+  Future<void> _refreshFullScreenState() async {
+    try {
+      final allowed = await NativeOrderAlert.canUseFullScreenIntent();
+      if (mounted && allowed != _fullScreenGranted) {
+        setState(() => _fullScreenGranted = allowed);
+      }
+    } catch (_) {}
+  }
+
+  /// ENABLE tap: open the exact Settings page, then verify on return. When
+  /// granted, fire one REAL full-screen test alert so the rider sees proof
+  /// it works — and tapping / dismissing it proves the tone stops too.
+  Future<void> _onEnableTap() async {
+    await NativeOrderAlert.openFullScreenIntentSettings();
+    // Poll for the grant for ~10s after returning (user may take a moment
+    // in Settings). On grant: hide banner + fire the proof test alert.
+    for (var i = 0; i < 10; i++) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      bool allowed = false;
+      try {
+        allowed = await NativeOrderAlert.canUseFullScreenIntent();
+      } catch (_) {}
+      if (allowed) {
+        if (mounted) setState(() => _fullScreenGranted = true);
+        await FirebaseService.showFullScreenTestAlert();
+        return;
+      }
+    }
+    if (mounted) await _refreshFullScreenState();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ordersSub?.cancel();
+    for (final s in _callSubs.values) {
+      s.cancel();
+    }
+    _callSubs.clear();
+    OrderRingtoneService.stopAll();
     super.dispose();
+  }
+
+  /// Watch my active deliveries for incoming customer calls.
+  /// Called on every orders snapshot — adds subs for new actives, drops finished.
+  void _syncCallListening(List<QueryDocumentSnapshot<Map<String, dynamic>>> activeDocs) {
+    final myActives = <String>{};
+    for (final doc in activeDocs) {
+      final data = doc.data();
+      final orderId = data['orderId'] as String? ?? doc.id;
+      final riderId = data['riderId'] as String?;
+      if (riderId == _riderId) myActives.add(orderId);
+    }
+    // Drop subs for orders no longer mine
+    for (final id in _callSubs.keys.toList()) {
+      if (!myActives.contains(id)) {
+        _callSubs.remove(id)?.cancel();
+      }
+    }
+    // Add subs for new actives
+    for (final orderId in myActives) {
+      if (_callSubs.containsKey(orderId)) continue;
+      _callSubs[orderId] = CallService.instance
+          .incomingCallStream(orderId: orderId, myId: _riderId)
+          .listen((invites) => _onCallInvites(orderId, invites));
+    }
+  }
+
+  void _onCallInvites(String orderId, List<CallInvite> invites) {
+    if (!mounted || !_isOnline) return;
+    final fresh = invites.where((i) =>
+        i.status == CallStatus.ringing &&
+        !_shownCallIds.contains(i.callId) &&
+        DateTime.now().difference(i.createdAt).inSeconds < 60);
+    for (final invite in fresh) {
+      _shownCallIds.add(invite.callId);
+      OrderRingtoneService.startRinging('call_$orderId');
+      if (!mounted) return;
+      Navigator.of(context)
+          .push(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => IncomingCallScreen(
+          orderId: invite.orderId,
+          callerLabel: invite.callerLabel,
+          onAccept: () {
+            Navigator.of(context).pop();
+            OrderRingtoneService.stopRinging('call_$orderId');
+            CallLauncher.answerCall(
+              context: context,
+              invite: invite,
+              myId: _riderId,
+              myRole: 'rider',
+            );
+          },
+          onDecline: () {
+            Navigator.of(context).pop();
+            OrderRingtoneService.stopRinging('call_$orderId');
+            CallLauncher.declineCall(invite);
+          },
+        ),
+      ))
+          .then((_) => OrderRingtoneService.stopRinging('call_$orderId'));
+    }
   }
 
   Future<void> _attachOrdersListenerWithRetry() async {
@@ -111,22 +289,63 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
         FirebaseService.subscribeToRiderNotifications();
       } else {
         FirebaseService.unsubscribeFromRiderNotifications();
+        // Going offline silences ringing + closes incoming screens
+        OrderRingtoneService.stopAll();
+        for (final id in _incomingRoutes.keys.toList()) {
+          _dismissIncomingOrderScreen(id);
+        }
       }
     });
   }
 
+  /// Orders older than this never ring — they were placed while this rider
+  /// was offline. Only FRESH orders (just placed) trigger sound + full screen.
+  static const Duration _freshOrderWindow = Duration(minutes: 30);
+
+  DateTime _orderTime(Map<String, dynamic> data) {
+    try {
+      final v = data['createdAt'];
+      if (v is Timestamp) return v.toDate();
+      if (v is String && v.isNotEmpty) return DateTime.parse(v);
+      if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+      final fb = data['placedAt'];
+      if (fb is String && fb.isNotEmpty) return DateTime.parse(fb);
+    } catch (_) {}
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
   void _handleOrdersSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
     if (!_isOnline) return;
-    // HARD FIX: instant notification — no time filtering, no wentOnlineAt gate.
-    // Every stage==0 order that hasn't been notified/rejected gets notified IMMEDIATELY.
-    // This ensures <1s delivery via Firestore real-time stream.
+    // Fresh orders ring INSTANTLY (<1s via Firestore stream). Stale orders
+    // (placed while rider was offline) show silently in the list — no sound,
+    // no full-screen popup, no duplicates. Notified IDs persist in
+    // FirebaseService prefs so restarts can't re-ring either.
+    final stillPending = <String>{};
+    final now = DateTime.now();
     for (final doc in snapshot.docs) {
       final data = doc.data();
       final orderId = data['orderId'] as String? ?? doc.id;
       final stage = (data['stage'] as num?)?.toInt() ?? 0;
       final isDeleted = data['isDeleted'] as bool? ?? false;
-      if (stage == 0 && !isDeleted && !_notifiedOrderIds.contains(orderId) && !_rejectedOrderIds.contains(orderId)) {
+      final riderId = data['riderId'] as String?;
+      final status = (data['status'] as String? ?? '').toLowerCase();
+      // Locally claimed/rejected by ME — never ring again, even before
+      // the Firestore write echoes back (kills the re-ring loop).
+      if (_claimedOrderIds.contains(orderId) || _rejectedOrderIds.contains(orderId)) {
+        continue;
+      }
+      final available = stage == 0 &&
+          !isDeleted &&
+          (riderId == null || riderId.isEmpty) &&
+          !status.contains('cancel');
+      if (available) stillPending.add(orderId);
+      // Stale = placed >30 min ago (rider was offline then) → list only, silent
+      final isFresh = now.difference(_orderTime(data)) < _freshOrderWindow;
+      if (!isFresh) continue;
+      if (available && !_notifiedOrderIds.contains(orderId) && !_rejectedOrderIds.contains(orderId) && !IncomingOrderCall.isShown(orderId)) {
         _notifiedOrderIds.add(orderId);
+        IncomingOrderCall.markShown(orderId);
+        _saveNotifiedIds();
         final items = data['itemsSummary'] as String? ?? _buildItemsSummary(data['items']);
         final catLabel = data['orderCategoryLabel'] as String? ?? _catLabel(data['orderCategory'] as String? ?? 'general');
         debugPrint('🔔 [RIDER] INSTANT notify for $orderId — $catLabel');
@@ -139,8 +358,226 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
           items: items,
           orderCategoryLabel: catLabel,
         );
+        // Call-style ringing + full-screen alert until someone accepts
+        NativeOrderAlert.bringAppToForeground();
+        OrderRingtoneService.startRinging(orderId);
+        _showIncomingOrderScreen(
+          orderId: orderId,
+          customerName: data['customerName'] as String? ?? 'Customer',
+          address: data['address'] as String? ?? 'Address not set',
+          totalAmount: (data['totalAmount'] as num?)?.toDouble() ?? 0,
+          itemsSummary: items,
+          categoryLabel: catLabel,
+          customerPhone: data['customerPhone'] as String? ?? '',
+        );
       }
     }
+    // Silence orders that are no longer available (accepted / cancelled /
+    // claimed) — ringtone stops, call screen closes, AND the tray
+    // notification vanishes. If the rider was LOOKING at the call screen,
+    // say WHY it vanished instead of cutting it silently.
+    final docsById = <String, Map<String, dynamic>>{};
+    for (final doc in snapshot.docs) {
+      final d = doc.data();
+      docsById[(d['orderId'] as String? ?? doc.id)] = d;
+    }
+    for (final ringingId in OrderRingtoneService.ringingOrderIds) {
+      if (!stillPending.contains(ringingId)) {
+        final d = docsById[ringingId];
+        final claimer = d?['riderId'] as String?;
+        final status = (d?['status'] as String? ?? '').toLowerCase();
+        final gone = d == null ||
+            (d['isDeleted'] as bool? ?? false) ||
+            status.contains('cancel');
+        final mine =
+            claimer != null && claimer.isNotEmpty && claimer == _riderId;
+        final takenByOther =
+            claimer != null && claimer.isNotEmpty && !mine;
+        final wasViewing = _incomingRoutes.containsKey(ringingId) ||
+            IncomingOrderCall.isShown(ringingId);
+        OrderRingtoneService.stopRinging(ringingId);
+        FirebaseService.dismissOrderNotification(ringingId);
+        _dismissIncomingOrderScreen(ringingId);
+        if (mounted && wasViewing && !mine) {
+          final msg = gone
+              ? 'Order $ringingId was cancelled by the customer'
+              : takenByOther
+                  ? 'Order $ringingId was just taken by another rider'
+                  : 'Order $ringingId is no longer available';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: FoodMelaaColors.textDark,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              content: Text(msg,
+                  style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // ── Incoming-order full screen (one per order, tracked by route) ────────────
+  final Map<String, Route<void>> _incomingRoutes = {};
+
+  void _showIncomingOrderScreen({
+    required String orderId,
+    required String customerName,
+    required String address,
+    required double totalAmount,
+    required String itemsSummary,
+    required String categoryLabel,
+    required String customerPhone,
+  }) {
+    NativeOrderAlert.bringAppToForeground();
+    if (!mounted || _incomingRoutes.containsKey(orderId)) return;
+    final route = MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => IncomingOrderScreen(
+        orderId: orderId,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        address: address,
+        totalAmount: totalAmount,
+        itemsSummary: itemsSummary,
+        categoryLabel: categoryLabel,
+        onAccept: () {
+          _dismissIncomingOrderScreen(orderId);
+          _acceptOrder(orderId, customerName, customerPhone, address,
+              itemsSummary, totalAmount);
+        },
+        onDecline: () {
+          _dismissIncomingOrderScreen(orderId);
+          _rejectOrder(orderId);
+        },
+        // VIEW ORDER: keep ringing, show the existing order card bottom-sheet
+        // on top of the call screen (same UI as tapping the dashboard card).
+        onViewOrder: () => _showViewOrderSheet(
+          orderId: orderId,
+          customerName: customerName,
+          customerPhone: customerPhone,
+          address: address,
+          totalAmount: totalAmount,
+          itemsSummary: itemsSummary,
+          categoryLabel: categoryLabel,
+        ),
+      ),
+    );
+    _incomingRoutes[orderId] = route;
+    IncomingOrderCall.trackRoute(orderId, route);
+    Navigator.of(context).push(route).then((_) {
+      _incomingRoutes.remove(orderId);
+      IncomingOrderCall.untrackRoute(orderId);
+    });
+  }
+
+  void _dismissIncomingOrderScreen(String orderId) {
+    final route = _incomingRoutes.remove(orderId);
+    IncomingOrderCall.dismiss(orderId);
+    OrderRingtoneService.stopRinging(orderId);
+    if (route == null) return;
+    final nav = route.navigator;
+    if (nav == null) return;
+    try {
+      nav.removeRoute(route);
+    } catch (_) {
+      // Already popped (e.g. user pressed back) — nothing to do
+    }
+  }
+
+  /// VIEW ORDER from the incoming call screen: read-only detail sheet over
+  /// the ringing call UI. Ringing continues — the rider still accepts or
+  /// rejects from the call screen underneath. Uses the same receipt layout
+  /// as tapping a dashboard order card (no duplicate order logic).
+  void _showViewOrderSheet({
+    required String orderId,
+    required String customerName,
+    required String customerPhone,
+    required String address,
+    required double totalAmount,
+    required String itemsSummary,
+    required String categoryLabel,
+  }) {
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: FoodMelaaColors.borderGrey,
+                        borderRadius: BorderRadius.circular(4)))),
+            const SizedBox(height: 16),
+            Row(children: [
+              Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: FoodMelaaColors.riderPrimaryLight,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.receipt_long_rounded,
+                      color: FoodMelaaColors.riderPrimary, size: 20)),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text('Order #$orderId',
+                        style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: FoodMelaaColors.textDark)),
+                    Text(categoryLabel.isNotEmpty ? categoryLabel : 'NEW ORDER',
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: FoodMelaaColors.textSecondary)),
+                  ])),
+            ]),
+            const SizedBox(height: 16),
+            _receiptRow('Customer', customerName),
+            _receiptRow('Phone',
+                customerPhone.isNotEmpty ? customerPhone : 'N/A'),
+            _receiptRow('Address', address),
+            _receiptRow('Items',
+                itemsSummary.isNotEmpty ? itemsSummary : 'See details'),
+            _receiptRow('Total', '₹${totalAmount.toInt()} (online)'),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: FoodMelaaColors.riderPrimary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14))),
+                child: Text('Back to Accept / Reject',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _buildItemsSummary(dynamic items) {
@@ -180,6 +617,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
 
   // ── Reject: local hide (no backend write — order stays available for other riders)
   void _rejectOrder(String orderId) {
+    OrderRingtoneService.stopRinging(orderId);
+    FirebaseService.dismissOrderNotification(orderId);
+    _dismissIncomingOrderScreen(orderId);
     setState(() => _rejectedOrderIds.add(orderId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -192,25 +632,49 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
     );
   }
 
-  // ── Accept: backend transaction + loading + race-condition safe
-  Future<void> _acceptOrder(String orderId, String customerName, String customerPhone, String address, String itemsSummary, double totalAmount) async {
-    if (_acceptingOrderIds.contains(orderId)) return; // Prevent double-tap
+  // ── Accept: backend transaction + loading + race-condition safe ──
+  // Single-tap guarantee: claimed orders are remembered locally so the same
+  // order NEVER rings again, even if the Firestore write takes time to echo.
+  final Set<String> _claimedOrderIds = {};
+  Future<void> _acceptOrder(String orderId, String customerName, String customerPhone, String address, String itemsSummary, double totalAmount, {double? deliveryLat, double? deliveryLng}) async {
+    if (_acceptingOrderIds.contains(orderId) || _claimedOrderIds.contains(orderId)) return; // Prevent double-tap
+    OrderRingtoneService.stopRinging(orderId);
+    FirebaseService.dismissOrderNotification(orderId);
+    _dismissIncomingOrderScreen(orderId);
     setState(() => _acceptingOrderIds.add(orderId));
+    // Show instant feedback — blocking loader so one tap is enough
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
+        ),
+      );
+    }
     try {
       final success = await FirebaseService.acceptOrder(orderId: orderId, riderName: _riderName, riderId: _riderId);
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close loader
+      setState(() => _acceptingOrderIds.remove(orderId));
       if (success) {
-        setState(() => _acceptingOrderIds.remove(orderId));
-        Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount)));
+        // Remember claim locally — snapshot echo delay can't re-ring this order
+        _claimedOrderIds.add(orderId);
+        _notifiedOrderIds.add(orderId);
+        _saveNotifiedIds();
+        Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
       } else {
-        setState(() => _acceptingOrderIds.remove(orderId));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(backgroundColor: const Color(0xFFD97706), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Row(children: [const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text('Order already taken by another rider', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))) ])),
         );
       }
     } catch (e) {
-      if (mounted) setState(() => _acceptingOrderIds.remove(orderId));
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, content: Text('Accept failed: $e', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
+      if (mounted) {
+        try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {} // close loader
+        setState(() => _acceptingOrderIds.remove(orderId));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, content: Text('Accept failed — check internet & try again', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
+      }
     }
   }
 
@@ -409,6 +873,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
               final riderId = d['riderId'] as String?;
               return (stage == 1 || stage == 2) && riderId == _riderId && !isDeleted;
             }).toList();
+            // ── Global incoming-call watch: ring even if delivery screen closed ──
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _syncCallListening(activeDocs);
+            });
             final completedDocs = uniqueDocs.where((doc) {
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
@@ -438,6 +906,61 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
 
             return Column(
               children: [
+                // Full-screen permission banner — visible until the OS
+                // confirms the grant. ENABLE opens Settings, then fires a
+                // real test alert as proof (tone stops on tap/dismiss).
+                if (!_fullScreenGranted)
+                  GestureDetector(
+                    onTap: _onEnableTap,
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: const Color(0xFFF59E0B)
+                                .withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.phone_in_talk_rounded,
+                              color: Color(0xFFB45309), size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Enable incoming-call alerts',
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF92400E))),
+                                Text(
+                                    'Tap to allow full-screen order alerts — otherwise orders arrive as notifications only',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: const Color(0xFF92400E))),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFB45309),
+                                borderRadius: BorderRadius.circular(10)),
+                            child: Text('ENABLE',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 // Stats banner — premium
                 Container(
                   margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -743,6 +1266,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
     final address = data['address'] as String? ?? 'Address not provided';
     final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
     final itemsSummary = data['itemsSummary'] as String? ?? _buildItemsSummary(data['items']);
+    // Customer's live GPS pin (saved by customer app at order time)
+    final deliveryLat = (data['deliveryLat'] as num?)?.toDouble();
+    final deliveryLng = (data['deliveryLng'] as num?)?.toDouble();
     final items = data['items'] as List? ?? [];
     final itemCount = items.isNotEmpty ? items.length : (itemsSummary.isEmpty ? 0 : itemsSummary.split(',').length);
     final isAccepting = _acceptingOrderIds.contains(orderId);
@@ -816,7 +1342,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
               children: [
                 _infoRow(Icons.person_rounded, 'Customer', '$customerName  •  $customerPhone', const Color(0xFF2563EB)),
                 const SizedBox(height: 10),
-                _infoRow(Icons.location_on_rounded, 'Deliver To', address, const Color(0xFFDC2626)),
+                _infoRow(Icons.location_on_rounded, 'Deliver To', deliveryLat != null && deliveryLng != null ? '$address  •  📍 LIVE GPS' : address, const Color(0xFFDC2626)),
                 const SizedBox(height: 10),
                 _infoRow(Icons.shopping_bag_rounded, 'Items', itemsSummary.isNotEmpty ? itemsSummary : 'See details', const Color(0xFFD97706), trailing: itemCount > 0 ? Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: FoodMelaaColors.background, borderRadius: BorderRadius.circular(8), border: Border.all(color: FoodMelaaColors.borderGrey)), child: Text('$itemCount items', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark))) : null),
                 const SizedBox(height: 10),
@@ -856,7 +1382,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
                     child: SizedBox(
                       height: 48,
                       child: ElevatedButton.icon(
-                        onPressed: isAccepting ? null : () => _acceptOrder(orderId, customerName, customerPhone, address, itemsSummary, totalAmount),
+                        onPressed: isAccepting ? null : () => _acceptOrder(orderId, customerName, customerPhone, address, itemsSummary, totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng),
                         icon: isAccepting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
                         label: Text(isAccepting ? 'Accepting...' : 'Accept', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
                         style: ElevatedButton.styleFrom(backgroundColor: FoodMelaaColors.riderPrimary, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), disabledBackgroundColor: FoodMelaaColors.riderPrimary.withValues(alpha: 0.6)),
@@ -874,7 +1400,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
                 height: 48,
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
                   },
                   icon: const Icon(Icons.navigation_rounded, color: Colors.white, size: 18),
                   label: Text('View Active Delivery', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),

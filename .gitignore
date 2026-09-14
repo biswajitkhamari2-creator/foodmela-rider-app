@@ -90,3 +90,6 @@ firebase_functions/
 netlify_notify/
 vercel_notify/
 test/
+
+# Real Firebase config (stray space in filename) - never commit
+android/google-services  org.json

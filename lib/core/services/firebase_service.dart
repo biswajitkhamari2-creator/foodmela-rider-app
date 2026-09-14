@@ -1,22 +1,89 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/state/food_mela_state.dart';
+import 'package:food_track/core/services/native_order_alert.dart';
 
 // ─── BACKGROUND MESSAGE HANDLER — RIDER APP ─────────────────────────────────
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  final title = message.notification?.title ?? message.data['title'] ?? '🛵 New Order!';
-  final body = message.notification?.body ?? message.data['body'] ?? 'A new order has arrived.';
-  debugPrint('🔔 [RIDER BACKGROUND] New order: $title');
-  await _showLocalNotification(title: title, body: body, payload: message.data.toString());
+  final dataType = message.data['type']?.toString() ?? '';
+  final title = message.notification?.title ??
+      message.data['title']?.toString() ??
+      '🛵 New Order!';
+  final body = message.notification?.body ??
+      message.data['body']?.toString() ??
+      'A new order has arrived.';
+  final orderId = message.data['orderId']?.toString() ?? '';
+
+  // WhatsApp-style incoming call for orders & calls — wake screen, bring to front, ring continuously
+  if (dataType == 'incoming_call' || dataType == 'new_order' || orderId.isNotEmpty) {
+    debugPrint('📞 [RIDER BACKGROUND] Incoming order call for order $orderId');
+    try {
+      if (orderId.isNotEmpty) {
+        await NativeOrderAlert.start(orderId);
+        await NativeOrderAlert.bringAppToForeground();
+      }
+    } catch (_) {}
+    await _showCallNotification(
+      title: title.isNotEmpty ? title : '📞 INCOMING ORDER CALL',
+      body: '$body — Tap to Open Call',
+      payload: message.data.toString(),
+    );
+    return;
+  }
+  debugPrint('🔔 [RIDER BACKGROUND] Message: $title');
+  await _showLocalNotification(
+    title: title,
+    body: body,
+    payload: message.data.toString(),
+    id: orderId.isNotEmpty
+        ? FirebaseService.notificationIdForOrder(orderId)
+        : null,
+  );
+}
+
+/// WhatsApp-style incoming-call alert: separate high-priority channel with
+/// full-screen intent — wakes the screen even when the app is killed.
+Future<void> _showCallNotification({
+  required String title,
+  required String body,
+  String? payload,
+}) async {
+  try {
+    const androidDetails = AndroidNotificationDetails(
+      'food_mela_calls',
+      'Food Mela Calls',
+      channelDescription: 'Incoming voice-call alerts (WhatsApp style)',
+      importance: Importance.max,
+      priority: Priority.high,
+      enableVibration: true,
+      playSound: true,
+      icon: '@mipmap/ic_launcher',
+      ticker: 'Incoming call!',
+      autoCancel: true,
+      fullScreenIntent: true,
+      visibility: NotificationVisibility.public,
+      category: AndroidNotificationCategory.call,
+    );
+    const notificationDetails = NotificationDetails(android: androidDetails);
+    await _localNotifications.show(
+      900001, // fixed ID — a new call replaces the previous ring
+      title,
+      body,
+      notificationDetails,
+      payload: payload,
+    );
+    debugPrint('✅ Call notification shown: $title');
+  } catch (e) {
+    debugPrint('⚠️ Call notification error: $e');
+  }
 }
 
 // ─── LOCAL NOTIFICATION HELPER ───────────────────────────────────────────────
@@ -27,6 +94,7 @@ Future<void> _showLocalNotification({
   required String title,
   required String body,
   String? payload,
+  int? id,
 }) async {
   try {
     const androidDetails = AndroidNotificationDetails(
@@ -42,10 +110,12 @@ Future<void> _showLocalNotification({
       autoCancel: true,
       fullScreenIntent: true,
       visibility: NotificationVisibility.public,
+      category: AndroidNotificationCategory.call,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
     );
     const notificationDetails = NotificationDetails(android: androidDetails);
     await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title,
       body,
       notificationDetails,
@@ -60,6 +130,127 @@ Future<void> _showLocalNotification({
 // ─── FIREBASE SERVICE ─────────────────────────────────────────────────────────
 class FirebaseService {
   static bool _isFirebaseInitialized = false;
+
+  // ── Incoming-order CALL hooks (set by IncomingOrderCall.ensureInitialized) ──
+  // Kept as plain callbacks so firebase_service never imports the call UI.
+  /// Foreground FCM new_order arrived — push the full-screen call UI.
+  static void Function(Map<String, String> data)? onForegroundNewOrder;
+
+  /// Any notification tapped (foreground/background/killed) — open call UI.
+  static void Function(String payload)? onNotificationTap;
+
+  /// App opened from terminated state via FCM — open call UI (verified).
+  static void Function(Map<String, String> data)? onFcmOpen;
+
+  /// Structured payload for new-order notifications: full order fields as
+  /// JSON so a tap opens the call screen even from killed state.
+  static String newOrderPayload({
+    required String orderId,
+    required String customerName,
+    required String address,
+    required double amount,
+    required String phone,
+    required String items,
+    required String categoryLabel,
+  }) {
+    return jsonEncode({
+      'type': 'new_order',
+      'orderId': orderId,
+      'customerName': customerName,
+      'address': address,
+      'amount': amount.toStringAsFixed(0),
+      'customerPhone': phone,
+      'items': items,
+      'categoryLabel': categoryLabel,
+    });
+  }
+
+  static Map<String, String> newOrderData({
+    required String orderId,
+    required String customerName,
+    required String address,
+    required double amount,
+    required String phone,
+    required String items,
+    required String categoryLabel,
+  }) {
+    return {
+      'type': 'new_order',
+      'orderId': orderId,
+      'customerName': customerName,
+      'address': address,
+      'amount': amount.toStringAsFixed(0),
+      'customerPhone': phone,
+      'items': items,
+      'categoryLabel': categoryLabel,
+    };
+  }
+
+  // ── Per-order notification IDs (so accept/decline can vanish them) ──────
+  // Stable int per orderId — same ID shown from every path (FCM, Firestore,
+  // background isolate), so cancelling by orderId always hits the right one.
+  static int notificationIdForOrder(String orderId) {
+    var h = 0;
+    for (var i = 0; i < orderId.length; i++) {
+      h = ((h * 31) + orderId.codeUnitAt(i)) & 0x7fffffff;
+    }
+    return 100000 + (h % 800000);
+  }
+
+  /// Proof test after the user grants full-screen permission: fires one REAL
+  /// full-screen alert through the same channel new orders use. Tapping or
+  /// swiping it away proves the tone stops — no order needed.
+  static Future<void> showFullScreenTestAlert() async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'food_mela_orders',
+        'Food Mela Orders',
+        channelDescription: 'Live order notifications for Food Mela Delivery Partner',
+        importance: Importance.max,
+        priority: Priority.high,
+        enableVibration: true,
+        playSound: true,
+        icon: '@mipmap/ic_launcher',
+        ticker: 'Full-screen alerts working!',
+        autoCancel: true,
+        fullScreenIntent: true,
+        visibility: NotificationVisibility.public,
+      );
+      const details = NotificationDetails(android: androidDetails);
+      await _localNotifications.show(
+        999001,
+        '✅ Full-screen alerts ON',
+        'Orders will now ring like incoming calls. Swipe this away — tone stops.',
+        details,
+        payload: '',
+      );
+      debugPrint('✅ [RIDER] Full-screen test alert fired');
+    } catch (e) {
+      debugPrint('⚠️ [RIDER] Test alert failed: $e');
+    }
+  }
+
+  /// Dismiss the tray notification for an order (accept / decline / claimed).
+  /// Also stops any ringing tied to it. Cancels BOTH the app-owned copy (by
+  /// per-order ID) and the system copy posted by FCM's notification block
+  /// (by tag = orderId, which the backend sets) — so no stale copy lingers.
+  static Future<void> dismissOrderNotification(String orderId) async {
+    if (orderId.isEmpty) return;
+    try {
+      await _localNotifications.cancel(notificationIdForOrder(orderId));
+      try {
+        final android = _localNotifications
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>();
+        // System copy posted by FCM carries tag = orderId (backend sets it).
+        await android?.cancel(notificationIdForOrder(orderId),
+            tag: orderId);
+      } catch (_) {}
+      debugPrint('🧹 [RIDER] notification dismissed for $orderId');
+    } catch (e) {
+      debugPrint('⚠️ notification cancel notice: $e');
+    }
+  }
 
   // ── Initialize ──────────────────────────────────────────────────────────────
   static Future<void> initialize() async {
@@ -85,14 +276,32 @@ class FirebaseService {
       initSettings,
       onDidReceiveNotificationResponse: (details) {
         debugPrint('Notification tapped: ${details.payload}');
+        // Tap → open the full-screen incoming-order call UI.
+        final payload = details.payload ?? '';
+        if (payload.isNotEmpty) {
+          try {
+            onNotificationTap?.call(payload);
+          } catch (e) {
+            debugPrint('⚠️ notification-tap hook notice: $e');
+          }
+        }
       },
     );
 
-    // Create high-priority notification channel (required for Android 8+)
-    const channel = AndroidNotificationChannel(
+    // Create high-priority notification channels (required for Android 8+)
+    const ordersChannel = AndroidNotificationChannel(
       'food_mela_orders',
       'Food Mela Orders',
       description: 'Live order notifications for Food Mela Delivery Partner',
+      importance: Importance.max,
+      enableVibration: true,
+      playSound: true,
+    );
+    // Dedicated calls channel — WhatsApp-style full-screen incoming-call ring
+    const callsChannel = AndroidNotificationChannel(
+      'food_mela_calls',
+      'Food Mela Calls',
+      description: 'Incoming voice-call alerts (rings even when app is closed)',
       importance: Importance.max,
       enableVibration: true,
       playSound: true,
@@ -102,7 +311,8 @@ class FirebaseService {
             AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
       await androidPlugin.requestNotificationsPermission();
-      await androidPlugin.createNotificationChannel(channel);
+      await androidPlugin.createNotificationChannel(ordersChannel);
+      await androidPlugin.createNotificationChannel(callsChannel);
     }
   }
 
@@ -130,18 +340,46 @@ class FirebaseService {
       final title = message.notification?.title ?? message.data['title'] ?? '';
       final body = message.notification?.body ?? message.data['body'] ?? '';
       debugPrint('🔔 [RIDER FOREGROUND FCM] type=$dataType title=$title');
+      // Incoming masked call — Firestore signaling shows the full screen;
+      // the push is a heads-up so it isn't missed in foreground.
+      if (dataType == 'incoming_call') {
+        debugPrint('📞 [RIDER FOREGROUND] incoming call: ${message.data['orderId']}');
+        _showCallNotification(
+          title: title.isNotEmpty ? title : '📞 Incoming call',
+          body: body.isNotEmpty ? body : 'Tap to answer (in-app)',
+          payload: message.data.toString(),
+        );
+        return;
+      }
       // Rider MUST receive new_order pushes (background FCM → foreground delivery)
-      if (dataType == 'new_order' || title.contains('New Order')) {
-        final orderId = message.data['orderId'] as String? ?? '';
-        if (orderId.isNotEmpty && _notifiedOrderIds.contains(orderId)) {
-          debugPrint('ℹ️ [RIDER FCM] Duplicate FCM for $orderId — already notified via Firestore');
-          return;
+      // FULL-SCREEN CALL: push IncomingOrderScreen directly — not just a
+      // tray notification. The hook also starts the looping ringtone.
+      if (dataType == 'new_order' || title.contains('New Order') || message.data.containsKey('orderId')) {
+        final orderId = message.data['orderId']?.toString() ?? '';
+        final data = message.data
+            .map((k, v) => MapEntry(k, v?.toString() ?? ''));
+        try {
+          NativeOrderAlert.bringAppToForeground();
+          onForegroundNewOrder?.call(data);
+        } catch (e) {
+          debugPrint('⚠️ [RIDER FCM] call-UI hook notice: $e');
         }
-        if (orderId.isNotEmpty) _notifiedOrderIds.add(orderId);
+        // Tray notification stays as backup (lock screen / heads-up) with a
+        // structured payload so tapping it opens the same call screen.
+        // Stable per-order ID → accept/decline can dismiss exactly this one.
         _showLocalNotification(
           title: title.isNotEmpty ? title : '🛵 New Order!',
           body: body.isNotEmpty ? body : 'A new order has arrived — tap to view',
-          payload: message.data.toString(),
+          payload: newOrderPayload(
+            orderId: orderId,
+            customerName: data['customerName'] ?? '',
+            address: data['address'] ?? '',
+            amount: double.tryParse(data['amount'] ?? '') ?? 0,
+            phone: data['customerPhone'] ?? '',
+            items: data['items'] ?? '',
+            categoryLabel: data['categoryLabel'] ?? '',
+          ),
+          id: orderId.isNotEmpty ? notificationIdForOrder(orderId) : null,
         );
         return;
       }
@@ -153,16 +391,28 @@ class FirebaseService {
       );
     });
 
-    // App opened from terminated state via notification
+    // App opened from terminated state via notification → open call UI.
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
         debugPrint('App launched from terminated via notification: ${message.data}');
+        try {
+          onFcmOpen?.call(
+              message.data.map((k, v) => MapEntry(k, v?.toString() ?? '')));
+        } catch (e) {
+          debugPrint('⚠️ fcm-open hook notice: $e');
+        }
       }
     });
 
-    // App resumed from background via notification tap
+    // App resumed from background via notification tap → open call UI.
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Notification opened app from background: ${message.data}');
+      try {
+        onFcmOpen?.call(
+            message.data.map((k, v) => MapEntry(k, v?.toString() ?? '')));
+      } catch (e) {
+        debugPrint('⚠️ fcm-open hook notice: $e');
+      }
     });
 
     // Rider MUST be subscribed to rider_notifications to receive FCM pushes
@@ -312,53 +562,13 @@ class FirebaseService {
       });
 
       debugPrint('✅ Order $finalOrderId saved — category: $orderCategoryLabel');
-
-      _sendRiderNotificationViaVercel(
-        orderId: finalOrderId,
-        customerName: customerName,
-        totalAmount: totalAmount,
-        address: address,
-        orderCategoryLabel: orderCategoryLabel,
-      );
+      // Rider FCM push is sent by the BACKEND on /api/orders/place —
+      // no client-side push needed (avoids duplicates).
     } catch (e) {
       debugPrint('Error saving order to Firestore: $e');
     }
 
     return finalOrderId;
-  }
-
-  // ── Vercel Notification Trigger ──────────────────────────────────────────────
-  /// Calls the free Vercel serverless function which sends FCM push to all riders.
-  /// Fire-and-forget: does not block order creation if notification fails.
-  static const String _vercelNotifyUrl =
-      'https://foodmela-notify.vercel.app/api/notify';
-
-  static void _sendRiderNotificationViaVercel({
-    required String orderId,
-    required String customerName,
-    required double totalAmount,
-    required String address,
-    String orderCategoryLabel = '',
-  }) {
-    if (_vercelNotifyUrl == 'VERCEL_URL_PLACEHOLDER') return;
-    Future(() async {
-      try {
-        final response = await http.post(
-          Uri.parse(_vercelNotifyUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'orderId': orderId,
-            'customerName': customerName,
-            'totalAmount': totalAmount,
-            'address': address,
-            'orderCategory': orderCategoryLabel,
-          }),
-        ).timeout(const Duration(seconds: 5));
-        debugPrint('🔔 Vercel notify response: ${response.statusCode}');
-      } catch (e) {
-        debugPrint('ℹ️ Vercel notify skipped (offline or not configured): $e');
-      }
-    });
   }
 
   // ── Live Customer Order Status Listener (for Customer App Notifications) ─────
@@ -586,6 +796,59 @@ class FirebaseService {
     }
   }
 
+  // ── Masked-call push hooks ───────────────────────────────────────────────────
+  /// Subscribe to per-order call topic so incoming-call pushes arrive even
+  /// when the app is in background. Call when entering an active order screen.
+  static Future<void> subscribeToOrderCalls(String orderId) async {
+    if (orderId.isEmpty) return;
+    try {
+      await FirebaseMessaging.instance.subscribeToTopic('calls_$orderId');
+      debugPrint('✅ Subscribed to call topic: calls_$orderId');
+    } catch (e) {
+      debugPrint('call topic subscribe notice: $e');
+    }
+  }
+
+  static Future<void> unsubscribeFromOrderCalls(String orderId) async {
+    if (orderId.isEmpty) return;
+    try {
+      await FirebaseMessaging.instance.unsubscribeFromTopic('calls_$orderId');
+    } catch (e) {
+      debugPrint('call topic unsubscribe notice: $e');
+    }
+  }
+
+  /// Save this device's FCM token on the order doc so the other party can
+  /// push an incoming-call alert directly. Role is 'customer' or 'rider'.
+  static Future<void> saveCallToken({
+    required String orderId,
+    required String role,
+  }) async {
+    try {
+      final token = await FirebaseMessaging.instance
+          .getToken()
+          .timeout(const Duration(seconds: 4));
+      if (token == null || token.isEmpty) return;
+      await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+        role == 'rider' ? 'riderFcmToken' : 'customerFcmToken': token,
+      });
+      debugPrint('✅ call token saved for $role on $orderId');
+    } catch (e) {
+      debugPrint('call token save notice: $e');
+    }
+  }
+
+  /// Incoming-call push now goes via CallService → backend /api/calls/:id/ring
+  /// (dead foodmela-notify service removed). Kept as no-op for callers.
+  static void sendIncomingCallPush({
+    required String orderId,
+    required String callId,
+    required String callerRole,
+    String? receiverToken,
+  }) {
+    debugPrint('ℹ️ sendIncomingCallPush deprecated — CallService handles /ring directly');
+  }
+
   // ── Notify Driver via Local Push ─────────────────────────────────────────────
   static Future<void> notifyDriverNewOrder({
     required String orderId,
@@ -606,7 +869,16 @@ class FirebaseService {
     await _showLocalNotification(
       title: '$catPrefix🛵 #$orderId',
       body: '${orderCategoryLabel.isNotEmpty ? "$orderCategoryLabel delivery" : "New order"} from ${customerName.isNotEmpty ? customerName : "Customer"} • ₹${amount.toInt()} — Tap to Accept or Reject',
-      payload: 'orderId=$orderId&phone=$phone',
+      payload: newOrderPayload(
+        orderId: orderId,
+        customerName: customerName,
+        address: address,
+        amount: amount,
+        phone: phone,
+        items: items,
+        categoryLabel: orderCategoryLabel,
+      ),
+      id: notificationIdForOrder(orderId),
     );
   }
 

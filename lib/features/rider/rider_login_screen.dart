@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/services/firebase_service.dart';
+import 'package:food_track/core/services/native_order_alert.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/rider_dashboard_screen.dart';
 
@@ -18,6 +19,78 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
   bool _obscure = true;
   bool _loading = false;
   String? _error;
+  bool _askedPermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Upfront permission prompt RIGHT on the login screen — no login needed.
+    // Every fresh install asks here itself: new orders ring like a WhatsApp
+    // call only when this is ON.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askPermissionUpfront());
+  }
+
+  Future<void> _askPermissionUpfront() async {
+    if (!mounted || _askedPermission) return;
+    _askedPermission = true;
+    // UNCONDITIONAL: the native check has proven unreliable (returns true
+    // while the OS still blocks full-screen), so ALWAYS ask. Granted users
+    // tap LATER once; denied users get the exact Settings page.
+    if (!mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.phone_in_talk_rounded,
+                color: Color(0xFFB45309), size: 22),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+              child: Text('Incoming-call alerts REQUIRED',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+        ]),
+        content: const Text(
+          'New orders will ring on your phone like a WhatsApp call — '
+          'full screen with ACCEPT / REJECT, even when the app is closed.\n\n'
+          'Without this, orders come as silent notifications only.\n\n'
+          'Tap ALLOW on the next screen to switch it ON.',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('LATER',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700, color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF047857),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('ALLOW',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800, color: Colors.white)),
+          ),
+        ],
+        ),
+      ),
+    );
+    if (go == true && mounted) {
+      await NativeOrderAlert.openFullScreenIntentSettings();
+    }
+  }
 
   Future<void> _signIn() async {
     final id = _identifierCtrl.text.trim();
@@ -30,6 +103,65 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       final rider = await RiderAuthService.instance.login(identifier: id, password: pw);
       // Re-subscribe to FCM topic immediately after login (was unsubscribed on logout)
       try { await FirebaseService.subscribeToRiderNotifications(); } catch (_) {}
+      if (!mounted) return;
+      // Upfront full-screen permission: ask BEFORE the dashboard, explaining
+      // new orders will ring like a WhatsApp call. Skipped if already granted.
+      try {
+        final allowed = await NativeOrderAlert.canUseFullScreenIntent();
+        if (mounted && !allowed) {
+          final go = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              title: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.phone_in_talk_rounded,
+                      color: Color(0xFFB45309), size: 22),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                    child: Text('Incoming-call alerts',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w800))),
+              ]),
+              content: const Text(
+                'New orders will ring on your phone like a WhatsApp call — '
+                'full screen with ACCEPT / REJECT, even when the app is closed.\n\n'
+                'Tap ALLOW on the next screen to switch it ON.',
+                style: TextStyle(fontSize: 13, height: 1.5),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dctx, false),
+                  child: const Text('SKIP',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(dctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF047857),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('ALLOW',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+          if (go == true) {
+            await NativeOrderAlert.openFullScreenIntentSettings();
+          }
+        }
+      } catch (_) {}
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

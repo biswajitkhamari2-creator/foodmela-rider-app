@@ -34,7 +34,9 @@ class AppState extends ChangeNotifier {
 
   double get deliveryFee => cartSubtotal > 299 ? 0 : 35;
   double get taxes => (cartSubtotal * 0.05); // 5% GST
-  double get cartTotal => (cartSubtotal - cartDiscount + deliveryFee + taxes).clamp(0, 99999);
+  /// Platform fee (₹7) — charged to the customer on every order.
+  static const double platformFee = 7;
+  double get cartTotal => (cartSubtotal - cartDiscount + deliveryFee + taxes + (cartSubtotal > 0 ? platformFee : 0)).clamp(0, 99999);
 
   void setAppMode(AppModeType mode) {
     _appMode = mode;

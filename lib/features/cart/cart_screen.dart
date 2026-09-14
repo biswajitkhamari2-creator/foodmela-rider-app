@@ -249,6 +249,21 @@ class _CartScreenState extends State<CartScreen> {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Platform Fee', style: GoogleFonts.inter(fontSize: 13)),
+                                  Text(
+                                    '₹${FoodMelaState.platformFee.toInt()}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              ),
                               const Divider(height: 20),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

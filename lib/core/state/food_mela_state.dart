@@ -49,6 +49,10 @@ class FoodMelaState extends ChangeNotifier {
   static const double _deliveryFeeThreshold = 299;
   static const double _deliveryFee = 39;
 
+  /// Platform fee (₹7) — charged to the customer on every order, shown as its
+  /// own bill row. Included in grandTotal so it flows into totalAmount.
+  static const double platformFee = 7;
+
   // ──────────────────────────────────────────────────────────────────────────────
   // GETTERS
   // ──────────────────────────────────────────────────────────────────────────────
@@ -131,7 +135,7 @@ class FoodMelaState extends ChangeNotifier {
   }
 
   double get deliveryFee => cartSubtotal >= _deliveryFeeThreshold ? 0 : _deliveryFee;
-  double get grandTotal => cartSubtotal + deliveryFee;
+  double get grandTotal => cartSubtotal + deliveryFee + (cartSubtotal > 0 ? platformFee : 0);
 
   // ──────────────────────────────────────────────────────────────────────────────
   // CART METHODS

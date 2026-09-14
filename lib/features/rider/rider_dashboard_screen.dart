@@ -839,18 +839,42 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseService.liveOrdersStream,
           builder: (context, snapshot) {
-            final allDocs = snapshot.data?.docs ?? [];
-            // ── Dedup by real unique Order ID (doc may repeat across snapshots) ──
-            final seen = <String>{};
-            final uniqueDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-            for (final doc in allDocs) {
-              final key = (doc.data()['orderId'] as String?)?.trim().isNotEmpty == true
-                  ? (doc.data()['orderId'] as String).trim()
-                  : doc.id;
-              if (seen.add(key)) uniqueDocs.add(doc);
+            // ── orderBy fallback: if the ordered query errors (mixed
+            // `createdAt` types across docs), retry WITHOUT orderBy — the
+            // Dart-side sort below still guarantees newest-first display.
+            if (snapshot.hasError && (snapshot.data?.docs.isEmpty ?? true)) {
+              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseService.liveOrdersStreamUnordered,
+                builder: (context, fbSnapshot) => _buildOrdersBody(
+                  context, fbSnapshot.data?.docs ?? [],
+                ),
+              );
             }
-            // ── Local-state sort: newest real `createdAt` FIRST ──
-            FirebaseService.sortNewestFirst(uniqueDocs, (d) => d.data());
+            return _buildOrdersBody(context, snapshot.data?.docs ?? []);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Builds the tabbed orders body from a raw doc list.
+  /// ORDERING CONTRACT: every tab list is sorted newest → oldest by real
+  /// timestamp (tiebroken by order key), so the sequence is ALWAYS
+  /// latest-first no matter how Firestore delivers the snapshot.
+  Widget _buildOrdersBody(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs) {
+            // ── Dedup by canonical Order ID (doc may repeat across snapshots).
+            // LAST occurrence wins — it carries the freshest field values.
+            final byKey = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+            for (final doc in allDocs) {
+              byKey[FirebaseService.orderKeyOf(doc.data(), doc.id)] = doc;
+            }
+            final uniqueDocs = byKey.values.toList();
+            // ── Canonical sort: newest real timestamp FIRST (stable tiebreak) ──
+            FirebaseService.sortNewestFirst(
+              uniqueDocs,
+              (d) => d.data(),
+              (d) => FirebaseService.orderKeyOf(d.data(), d.id),
+            );
             final pendingDocs = uniqueDocs.where((doc) {
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
@@ -985,10 +1009,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 ),
               ],
             );
-          },
-        ),
-      ),
-    );
   }
 
   Widget _statCard(String label, String value, IconData icon, Color color, Color bg) {

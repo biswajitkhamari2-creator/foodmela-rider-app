@@ -654,8 +654,13 @@ class FirebaseService {
   }
 
   // ── Live Orders Stream (for Driver App) ─────────────────────────────────────
-  /// Newest-first at the QUERY level (createdAt DESC) + Dart-side re-sort.
-  /// Real backend timestamp field: `createdAt` (serverTimestamp on create).
+  /// Newest-first ordering is enforced DART-SIDE ([sortNewestFirst]) on every
+  /// snapshot — the single source of truth for list order.
+  /// The query ALSO requests `createdAt DESC` as a fast-path, but some order
+  /// docs carry mixed `createdAt` shapes (Timestamp vs ISO string vs missing
+  /// while serverTimestamp resolves). If Firestore rejects the orderBy, the
+  /// dashboard falls back to [liveOrdersStreamUnordered] + the same Dart sort,
+  /// so the list NEVER renders haphazard — worst case it costs one extra sort.
   /// Single collection stream, no where-filters → no composite index needed,
   /// orders appear INSTANTLY (<1s) via Firestore real-time listener.
   /// Vercel FCM push is backup for killed/background app; Firestore stream is primary for foreground.
@@ -667,25 +672,66 @@ class FirebaseService {
         .snapshots();
   }
 
+  /// Fallback stream WITHOUT orderBy — used when the ordered query errors
+  /// (mixed timestamp types). Dart-side [sortNewestFirst] still guarantees
+  /// newest-first display.
+  static Stream<QuerySnapshot<Map<String, dynamic>>>? get liveOrdersStreamUnordered {
+    if (!_isFirebaseInitialized) return null;
+    return FirebaseFirestore.instance.collection('orders').snapshots();
+  }
+
   /// Real timestamp extractor — handles Firestore Timestamp, ISO string,
-  /// millis int, or missing (missing sorts oldest).
+  /// millis int, seconds-double, or missing (missing sorts oldest).
+  /// Checks `createdAt`, then `placedAt`, then `updatedAt`, then `timestamp`.
   static DateTime orderTimestamp(Map<String, dynamic> data) {
-    try {
-      final v = data['createdAt'];
-      if (v is Timestamp) return v.toDate();
-      if (v is String && v.isNotEmpty) return DateTime.parse(v);
-      if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
-      final fallback = data['placedAt'];
-      if (fallback is String && fallback.isNotEmpty) return DateTime.parse(fallback);
-    } catch (_) {}
+    DateTime? tryParse(dynamic v) {
+      try {
+        if (v is Timestamp) return v.toDate();
+        if (v is String && v.isNotEmpty) {
+          final parsed = DateTime.tryParse(v);
+          if (parsed != null) return parsed;
+          final asNum = num.tryParse(v);
+          if (asNum != null) {
+            return DateTime.fromMillisecondsSinceEpoch(
+              asNum < 10000000000 ? (asNum * 1000).toInt() : asNum.toInt(),
+            );
+          }
+        }
+        if (v is num) {
+          return DateTime.fromMillisecondsSinceEpoch(
+            v < 10000000000 ? (v * 1000).toInt() : v.toInt(),
+          );
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    for (final key in const ['createdAt', 'placedAt', 'updatedAt', 'timestamp']) {
+      final parsed = tryParse(data[key]);
+      if (parsed != null) return parsed;
+    }
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  /// Local-state sort: newest first by real `createdAt`. Call after every
-  /// realtime insert/update so the list stays consistent across refresh,
-  /// reconnect, pagination, and returning to dashboard.
-  static void sortNewestFirst<T>(List<T> docs, Map<String, dynamic> Function(T) dataOf) {
-    docs.sort((a, b) => orderTimestamp(dataOf(b)).compareTo(orderTimestamp(dataOf(a))));
+  /// Canonical order key — the stable identity used for dedup AND as the
+  /// sort tiebreak (newer orderIds sort first when timestamps tie).
+  static String orderKeyOf(Map<String, dynamic> data, String docId) {
+    final oid = (data['orderId'] as String?)?.trim();
+    return (oid != null && oid.isNotEmpty) ? oid : docId;
+  }
+
+  /// Local-state sort: newest first by real timestamp, tiebroken by order key
+  /// so the sequence is STRICTLY deterministic — latest → oldest, always.
+  /// Call after every realtime insert/update so the list stays consistent
+  /// across refresh, reconnect, pagination, and returning to dashboard.
+  static void sortNewestFirst<T>(List<T> docs, Map<String, dynamic> Function(T) dataOf, [String Function(T)? idOf]) {
+    docs.sort((a, b) {
+      final timeCmp = orderTimestamp(dataOf(b)).compareTo(orderTimestamp(dataOf(a)));
+      if (timeCmp != 0) return timeCmp;
+      final ka = idOf != null ? idOf(a) : '';
+      final kb = idOf != null ? idOf(b) : '';
+      return kb.compareTo(ka);
+    });
   }
 
   /// Rider-scoped stream — only orders assigned to this rider (active + history).

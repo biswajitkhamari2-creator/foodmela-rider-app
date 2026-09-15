@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:food_track/core/services/firebase_service.dart';
+import 'package:food_track/core/utils/privacy.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
 import 'package:food_track/core/services/order_ringtone_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
@@ -310,9 +311,8 @@ class IncomingOrderCall {
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
             const SizedBox(height: 16),
             _sheetRow('Customer', data['customerName'] ?? 'Customer'),
-            _sheetRow('Phone', (data['customerPhone'] ?? '').isNotEmpty
-                ? data['customerPhone']!
-                : 'N/A'),
+            // Privacy: masked — rider never sees the real number.
+            _sheetRow('Phone', maskPhone(data['customerPhone'])),
             _sheetRow('Address', data['address'] ?? 'Address not set'),
             _sheetRow('Items', (data['items'] ?? '').isNotEmpty
                 ? data['items']!

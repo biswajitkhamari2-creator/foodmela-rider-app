@@ -11,11 +11,11 @@
 //   );
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'call_config.dart';
 import 'call_models.dart';
 import 'call_service.dart';
 import 'active_call_screen.dart';
+import 'outgoing_call_screen.dart';
 
 class CallLauncher {
   CallLauncher._();
@@ -46,21 +46,51 @@ class CallLauncher {
     final messenger = ScaffoldMessenger.of(context);
     late CallInvite invite;
     try {
-      _ringingDialog(context, peerLabel, orderId);
       invite = await CallService.instance.startCall(
         orderId: orderId,
         callerId: myId,
         callerRole: myRole,
       );
     } catch (e) {
-      navigator.pop(); // close ringing
       messenger.showSnackBar(SnackBar(content: Text(_friendlyError(e))));
       return;
     }
 
-    // 2. Wait for accept / reject / timeout (45s).
-    final accepted = await _waitForAnswer(invite);
-    navigator.pop(); // close ringing dialog
+    // 2. Premium ringing screen + answer watch race.
+    // OutgoingCallScreen pops with `false` on Cancel; _waitForAnswer resolves
+    // on accept/reject/timeout. Whichever finishes first wins.
+    if (!context.mounted) return;
+    final ringingCompleter = Completer<bool>(); // true=cancelled
+    final ringingFuture = navigator.push<bool>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => OutgoingCallScreen(
+        orderId: orderId,
+        peerLabel: peerLabel,
+        onCancel: () {
+          if (!ringingCompleter.isCompleted) ringingCompleter.complete(true);
+          Navigator.of(context).pop(false);
+        },
+      ),
+    ));
+    // If the route pops any other way, unblock the race.
+    ringingFuture.then((_) {
+      if (!ringingCompleter.isCompleted) ringingCompleter.complete(false);
+    });
+    final answerFuture = _waitForAnswer(invite);
+    await Future.any([ringingCompleter.future, answerFuture]);
+    final cancelledByCaller =
+        ringingCompleter.isCompleted && await ringingCompleter.future;
+    if (cancelledByCaller) {
+      await CallService.instance.setStatus(
+          orderId: orderId, callId: invite.callId, status: CallStatus.ended);
+      return;
+    }
+    final accepted = await answerFuture;
+    // Close ringing screen (answered / rejected / timeout).
+    try {
+      navigator.pop();
+    } catch (_) {}
+    await ringingFuture;
     if (accepted == null) {
       await CallService.instance.setStatus(
           orderId: orderId, callId: invite.callId, status: CallStatus.missed);
@@ -156,35 +186,6 @@ class CallLauncher {
       timer.cancel();
       sub.cancel();
     });
-  }
-
-  static void _ringingDialog(BuildContext context, String peerLabel, String orderId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              const SizedBox(
-                width: 44,
-                height: 44,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-              const SizedBox(height: 16),
-              Text('Calling $peerLabel…',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-              Text('Order #$orderId',
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   static String _friendlyError(Object e) {

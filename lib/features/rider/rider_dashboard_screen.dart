@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/utils/privacy.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
@@ -14,6 +15,7 @@ import 'package:food_track/features/calling/call_models.dart';
 import 'package:food_track/features/calling/call_service.dart';
 import 'package:food_track/features/calling/incoming_call_screen.dart';
 import 'package:food_track/features/rider/active_delivery_screen.dart';
+import 'package:food_track/features/rider/rider_wallet_screen.dart';
 import 'package:food_track/features/rider/incoming_order_screen.dart';
 import 'package:food_track/features/rider/order_permission_setup_dialog.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
@@ -551,8 +553,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ]),
             const SizedBox(height: 16),
             _receiptRow('Customer', customerName),
-            _receiptRow('Phone',
-                customerPhone.isNotEmpty ? customerPhone : 'N/A'),
+            // Privacy: rider never sees the real number — masked always.
+            _receiptRow('Phone', maskPhone(customerPhone)),
             _receiptRow('Address', address),
             _receiptRow('Items',
                 itemsSummary.isNotEmpty ? itemsSummary : 'See details'),
@@ -994,7 +996,32 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     children: [
                       Expanded(child: _statCard('DELIVERED', '${earnedDocs.length} Orders', Icons.check_circle_rounded, FoodMelaaColors.riderPrimary, FoodMelaaColors.riderPrimaryLight)),
                       const SizedBox(width: 12),
-                      Expanded(child: _statCard('EARNINGS', '₹${totalEarnings.toInt()}', Icons.account_balance_wallet_rounded, const Color(0xFFD97706), const Color(0xFFFFFBEB))),
+                      // EARNINGS → opens premium Wallet (withdrawals + history)
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RiderWalletScreen(riderId: _riderId, riderName: _riderName),
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              _statCard('EARNINGS', '₹${totalEarnings.toInt()}', Icons.account_balance_wallet_rounded, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(8)),
+                                  child: Text('WALLET ›',
+                                      style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1128,7 +1155,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Row(children: [const Icon(Icons.person_outline_rounded, size: 14, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$customerName • $customerPhone', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark))]), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFFDE68A))), child: Text('+ ₹40', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF92400E))))]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Row(children: [const Icon(Icons.person_outline_rounded, size: 14, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$customerName • ${maskPhone(customerPhone)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark))]), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFFDE68A))), child: Text('+ ₹40', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF92400E))))]),
                   const SizedBox(height: 8),
                   Row(children: [const Icon(Icons.access_time_rounded, size: 13, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text(dateFormatted, style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textSecondary))]),
                   const SizedBox(height: 8),
@@ -1172,7 +1199,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ),
             const SizedBox(height: 16),
             _receiptRow('Customer', customerName),
-            _receiptRow('Phone', customerPhone),
+            _receiptRow('Phone', maskPhone(customerPhone)),
             _receiptRow('Address', address),
             _receiptRow('Items', itemsSummary),
             _receiptRow('Total Paid', '₹${totalAmount.toInt()} (online)'),
@@ -1252,7 +1279,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _infoRow(Icons.person_rounded, 'Customer', '$customerName • $customerPhone', const Color(0xFF2563EB)),
+                _infoRow(Icons.person_rounded, 'Customer', '$customerName • ${maskPhone(customerPhone)}', const Color(0xFF2563EB)),
                 const SizedBox(height: 8),
                 _infoRow(Icons.location_on_rounded, 'Address', address, const Color(0xFFDC2626)),
                 const SizedBox(height: 8),
@@ -1360,7 +1387,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _infoRow(Icons.person_rounded, 'Customer', '$customerName  •  $customerPhone', const Color(0xFF2563EB)),
+                _infoRow(Icons.person_rounded, 'Customer', '$customerName  •  ${maskPhone(customerPhone)}', const Color(0xFF2563EB)),
                 const SizedBox(height: 10),
                 _infoRow(Icons.location_on_rounded, 'Deliver To', deliveryLat != null && deliveryLng != null ? '$address  •  📍 LIVE GPS' : address, const Color(0xFFDC2626)),
                 const SizedBox(height: 10),

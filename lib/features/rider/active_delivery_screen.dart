@@ -62,6 +62,14 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   Map<String, dynamic>? _orderData;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSubscription;
   bool _isCancelledAlertShown = false;
+  // ── 2-min status lock after accept ─────────────────────────────────────
+  // Prevents accidental taps right after accepting. Lock starts when this
+  // screen opens (accept moment) and lasts 120s. Uses acceptedAt from the
+  // order doc when available (server time), else screen-open time.
+  static const int _statusLockSeconds = 120;
+  DateTime? _acceptedAt;
+  Timer? _lockTimer;
+  int _lockRemaining = 0;
   // Rider LIVE GPS → same order doc (customer map reads these, no refresh).
   StreamSubscription<Position>? _riderGpsSub;
   Position? _riderPos;
@@ -85,6 +93,10 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   @override
   void initState() {
     super.initState();
+    // Lock fallback: screen-open time (accept moment). Refined by acceptedAt
+    // from the order doc once the snapshot arrives.
+    _acceptedAt = DateTime.now();
+    _startLockCountdown();
     _listenToOrderCancellation();
     _startRiderLiveGps();
     // Masked-call readiness: subscribe to incoming-call pushes + publish my
@@ -187,11 +199,58 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     _orderSubscription = FirebaseFirestore.instance.collection('orders').doc(widget.orderId).snapshots().listen((snap) {
       if (snap.exists && snap.data() != null) {
         setState(() => _orderData = snap.data());
+        // Refine lock start with server acceptedAt (authoritative accept time).
+        final acc = snap.data()?['acceptedAt'];
+        DateTime? serverAccepted;
+        if (acc is Timestamp) {
+          serverAccepted = acc.toDate();
+        } else if (acc is String) {
+          serverAccepted = DateTime.tryParse(acc);
+        }
+        if (serverAccepted != null &&
+            (_acceptedAt == null || serverAccepted.isBefore(_acceptedAt!))) {
+          _acceptedAt = serverAccepted;
+          _startLockCountdown();
+        }
         final status = (snap.data()?['status'] as String? ?? '').toLowerCase();
         final stage = (snap.data()?['stage'] as num?)?.toInt() ?? 0;
         if (stage == -1 || status.contains('cancel')) _showCancellationAlert();
       }
     });
+  }
+
+  /// (Re)starts the 2-min lock countdown from [_acceptedAt].
+  void _startLockCountdown() {
+    _lockTimer?.cancel();
+    final base = _acceptedAt ?? DateTime.now();
+    final elapsed = DateTime.now().difference(base).inSeconds;
+    final remaining = _statusLockSeconds - elapsed;
+    if (remaining <= 0) {
+      if (mounted) setState(() => _lockRemaining = 0);
+      return;
+    }
+    if (mounted) setState(() => _lockRemaining = remaining);
+    _lockTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      final left = _statusLockSeconds - DateTime.now().difference(base).inSeconds;
+      if (left <= 0) {
+        t.cancel();
+        setState(() => _lockRemaining = 0);
+      } else {
+        setState(() => _lockRemaining = left);
+      }
+    });
+  }
+
+  bool get _statusLocked => _lockRemaining > 0;
+
+  String get _lockLabel {
+    final m = _lockRemaining ~/ 60;
+    final s = _lockRemaining % 60;
+    return 'Wait ${m.toString().padLeft(1, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   void _showCancellationAlert() {
@@ -218,6 +277,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     FirebaseService.unsubscribeFromOrderCalls(widget.orderId);
     _orderSubscription?.cancel();
     _riderGpsSub?.cancel();
+    _lockTimer?.cancel();
     _otpController.dispose();
     super.dispose();
   }
@@ -225,6 +285,17 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   void _advanceStep() {
     if (_isCancelled) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, content: Text('Order cancelled — cannot update', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
+      return;
+    }
+    // 2-min lock after accept: block accidental status taps.
+    if (_statusLocked) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: const Color(0xFFD97706),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text('Please wait $_lockLabel after accepting before updating status',
+            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+      ));
       return;
     }
     if (_currentStep < 3) {
@@ -557,19 +628,33 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             ),
             const SizedBox(height: 20),
 
-            // CTA — NO cancel/reject after acceptance
+            // CTA — NO cancel/reject after acceptance; 2-min lock after accept
             SizedBox(
               width: double.infinity,
               height: 54,
               child: ElevatedButton(
                 onPressed: _advanceStep,
-                style: ElevatedButton.styleFrom(backgroundColor: FoodMelaaColors.riderPrimary, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), shadowColor: FoodMelaaColors.riderPrimary.withValues(alpha: 0.3)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _statusLocked
+                        ? FoodMelaaColors.textGrey
+                        : FoodMelaaColors.riderPrimary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shadowColor: FoodMelaaColors.riderPrimary.withValues(alpha: 0.3)),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(_currentStep == 3 ? 'Enter Customer OTP' : 'Update Status', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                    Icon(_statusLocked
+                        ? Icons.lock_clock_rounded
+                        : (_currentStep == 3 ? Icons.vpn_key_rounded : Icons.arrow_forward_rounded),
+                        color: Colors.white, size: 16),
                     const SizedBox(width: 8),
-                    Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), shape: BoxShape.circle), child: Icon(_currentStep == 3 ? Icons.vpn_key_rounded : Icons.arrow_forward_rounded, color: Colors.white, size: 14)),
+                    Text(
+                        _statusLocked
+                            ? _lockLabel
+                            : (_currentStep == 3 ? 'Enter Customer OTP' : 'Update Status'),
+                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                   ],
                 ),
               ),

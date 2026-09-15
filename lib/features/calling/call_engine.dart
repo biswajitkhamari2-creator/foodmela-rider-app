@@ -1,6 +1,9 @@
 // ─── Food Mela — Agora voice engine wrapper ───────────────────────────────────
 // Voice-only (audio). Handles join/leave, mute, speaker, remote events.
 // Requires dependency: agora_rtc_engine: ^6.3.0
+// LOW-NETWORK: channel join carries a timeout so a dying connection fails
+// fast (caller retries) instead of hanging the call screen forever.
+import 'dart:async';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -45,15 +48,22 @@ class CallEngine {
     await _ensureEngine();
     _muted = false;
     _speaker = false;
-    await _engine!.joinChannel(
-      token: token,
-      channelId: channel,
-      uid: uid,
-      options: const ChannelMediaOptions(
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        channelProfile: ChannelProfileType.channelProfileCommunication,
-      ),
-    );
+    // Fail fast on dead connections — the call screen surfaces the error and
+    // the user can redial, instead of staring at "Connecting…" forever.
+    await _engine!
+        .joinChannel(
+          token: token,
+          channelId: channel,
+          uid: uid,
+          options: const ChannelMediaOptions(
+            clientRoleType: ClientRoleType.clientRoleBroadcaster,
+            channelProfile: ChannelProfileType.channelProfileCommunication,
+          ),
+        )
+        .timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => throw TimeoutException('Voice channel join timed out — check network and redial'),
+        );
   }
 
   Future<void> toggleMute() async {

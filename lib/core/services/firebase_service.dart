@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/state/food_mela_state.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
+import 'package:food_track/core/utils/network_retry.dart';
 
 // ─── BACKGROUND MESSAGE HANDLER — RIDER APP ─────────────────────────────────
 @pragma('vm:entry-point')
@@ -257,6 +258,18 @@ class FirebaseService {
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp();
+      }
+      // ── LOW-NETWORK: offline persistence + large cache ──────────────────
+      // Order lists keep working from local cache on 2G/dropouts; writes
+      // queue and sync when the network returns.
+      // Behaviour-only: no feature, API, or UI change.
+      try {
+        FirebaseFirestore.instance.settings = const Settings(
+          persistenceEnabled: true,
+          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+        );
+      } catch (_) {
+        // Settings can only be set before first use — already configured.
       }
       _isFirebaseInitialized = true;
       // Background handler is registered in main.dart at top-level (required before any async init)
@@ -535,11 +548,9 @@ class FirebaseService {
       return finalOrderId;
     }
 
-    try {
-      await FirebaseFirestore.instance
-          .collection('orders')
-          .doc(finalOrderId)
-          .set({
+    // LOW-NETWORK: order write with timeout + retry — fails fast and retries
+    // instead of silently dropping the order on a dying connection.
+    final orderData = {
         'orderId': finalOrderId,
         'customerName': customerName,
         'customerPhone': customerPhone,
@@ -559,7 +570,17 @@ class FirebaseService {
         'deliveryOtp': deliveryOtp ?? _generateOtp(),
         'createdAt': FieldValue.serverTimestamp(),
         'isDeleted': false,
-      });
+      };
+    try {
+      await retryNetwork(
+        () => FirebaseFirestore.instance
+            .collection('orders')
+            .doc(finalOrderId)
+            .set(orderData)
+            .timeout(const Duration(seconds: 10)),
+        label: 'order save',
+        noRetryOn: (e) => !isRetryableError(e),
+      );
 
       debugPrint('✅ Order $finalOrderId saved — category: $orderCategoryLabel');
       // Rider FCM push is sent by the BACKEND on /api/orders/place —

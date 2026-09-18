@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// ─── RIDER AUTH SERVICE ─────────────────────────────────────────────────
@@ -20,6 +22,46 @@ class RiderAuthService {
   static const _kRiderPhone = 'rider_phone';
   static const _kRiderName = 'rider_name';
   static const _kRiderPartnerId = 'rider_partner_id';
+  static const _kRiderApiToken = 'rider_api_token';
+
+  /// Backend rider apiToken (minted at login, bound to rider phone).
+  /// Required by /api/orders/live, /accept, /update-stage, /calls/*.
+  static Future<String> apiToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_kRiderApiToken) ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<Map<String, String>> apiHeaders() async {
+    final t = await apiToken();
+    return {
+      'Content-Type': 'application/json',
+      if (t.isNotEmpty) 'Authorization': 'Bearer $t',
+    };
+  }
+
+  /// Exchange the Firebase ID token for a backend rider apiToken.
+  static Future<void> _mintRiderToken(User user) async {
+    try {
+      final idToken = await user.getIdToken();
+      final res = await http
+          .post(Uri.parse('https://foodmela.online/api/auth/rider/token'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $idToken',
+              },
+              body: jsonEncode({}))
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return;
+      final b = jsonDecode(res.body) as Map<String, dynamic>;
+      final t = (b['apiToken'] as String?) ?? '';
+      if (t.isEmpty) return;
+      (await SharedPreferences.getInstance()).setString(_kRiderApiToken, t);
+    } catch (_) {}
+  }
 
   /// Login with email OR phone + password.
   /// Returns rider data on success, throws on failure.
@@ -158,6 +200,8 @@ class RiderAuthService {
     await prefs.setString(_kRiderPhone, data['phone'] as String? ?? phone);
     await prefs.setString(_kRiderName, data['name'] as String? ?? '');
     await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
+    // SECURITY: mint backend rider apiToken for /api/orders/* + /api/calls/*.
+    await _mintRiderToken(cred.user!);
 
     return {
       'uid': uid,
@@ -177,6 +221,7 @@ class RiderAuthService {
     await prefs.remove(_kRiderPhone);
     await prefs.remove(_kRiderName);
     await prefs.remove(_kRiderPartnerId);
+    await prefs.remove(_kRiderApiToken);
   }
 
   Future<Map<String, String>?> getSession() async {

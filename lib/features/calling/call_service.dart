@@ -17,6 +17,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:food_track/core/utils/network_retry.dart';
+import 'package:food_track/core/services/rider_auth_service.dart';
 import 'call_config.dart';
 import 'call_models.dart';
 
@@ -43,18 +44,22 @@ class CallService {
   String get _base => CallConfig.backendBaseUrl;
 
   /// POST with retry — short first timeout (fail fast on 2G) + backoff.
+  /// SECURITY: rider apiToken attached (backend requires login on calls/*).
   Future<Map<String, dynamic>> _postJson(String path, Map<String, dynamic> body, {required String label}) {
     return retryNetwork(
       () async {
         final res = await http
             .post(
               Uri.parse('$_base$path'),
-              headers: {'Content-Type': 'application/json'},
+              headers: await RiderAuthService.apiHeaders(),
               body: jsonEncode(body),
             )
             .timeout(const Duration(seconds: 8));
         final decoded = jsonDecode(res.body) as Map<String, dynamic>;
-        if (res.statusCode != 200 || decoded['success'] != true) {
+        // Backend returns 200 (token/status) AND 201 (request created) —
+        // accept any 2xx with success:true.
+        final okStatus = res.statusCode >= 200 && res.statusCode < 300;
+        if (!okStatus || decoded['success'] != true) {
           final err = Exception((decoded['error'] as String?) ?? '$label failed (${res.statusCode})');
           // 4xx business errors (not found, forbidden) won't fix themselves.
           if (res.statusCode >= 400 && res.statusCode < 500 && res.statusCode != 429) throw err;
@@ -120,8 +125,12 @@ class CallService {
       status: CallStatus.ringing,
       createdAt: DateTime.now(),
     );
+    // Signaling lives INSIDE the order doc (field `activeCall`) — the
+    // `calls` subcollection is blocked by Firestore rules, but order-doc
+    // writes are allowed. One active call per order; a new call overwrites.
+    final signalMap = invite.toMap()..['callId'] = invite.callId;
     await _writeWithRetry(
-      () => _db.collection('orders').doc(orderId).collection('calls').doc(invite.callId).set(invite.toMap()),
+      () => _db.collection('orders').doc(orderId).update({'activeCall': signalMap}),
       label: 'call invite write',
     );
     // Backup path: incoming-call FCM push (covers background/killed app).
@@ -149,7 +158,7 @@ class CallService {
         final res = await http
             .post(
               Uri.parse('$_base/api/calls/${invite.orderId}/ring'),
-              headers: {'Content-Type': 'application/json'},
+              headers: await RiderAuthService.apiHeaders(),
               body: jsonEncode({
                 'callId': invite.callId,
                 'callerRole': invite.callerRole,
@@ -164,16 +173,22 @@ class CallService {
     });
   }
 
-  // ── Receiver: live invites where I am the receiver and still ringing ──
+  // ── Receiver: live invite from the order doc's `activeCall` field ──
   Stream<List<CallInvite>> incomingCallStream({required String orderId, required String myId}) {
     return _db
         .collection('orders')
         .doc(orderId)
-        .collection('calls')
-        .where('receiverId', isEqualTo: myId)
-        .where('status', isEqualTo: 'ringing')
         .snapshots()
-        .map((s) => s.docs.map((d) => CallInvite.fromDoc(d.id, d.data())).toList());
+        .map((d) {
+      final data = d.data();
+      final m = data?['activeCall'] as Map<String, dynamic>?;
+      if (m == null) return <CallInvite>[];
+      final callId = (m['callId'] as String?) ?? '';
+      if (callId.isEmpty) return <CallInvite>[];
+      if ((m['receiverId'] as String?) != myId) return <CallInvite>[];
+      if ((m['status'] as String?) != 'ringing') return <CallInvite>[];
+      return [CallInvite.fromDoc(callId, m)];
+    });
   }
 
   // ── Watch one call's status (caller waits for accept/reject/end) ──
@@ -181,10 +196,15 @@ class CallService {
     return _db
         .collection('orders')
         .doc(orderId)
-        .collection('calls')
-        .doc(callId)
         .snapshots()
-        .map((d) => d.exists ? CallInvite.fromDoc(d.id, d.data()!) : null);
+        .map((d) {
+      final data = d.data();
+      final m = data?['activeCall'] as Map<String, dynamic>?;
+      if (m == null) return null;
+      final id = (m['callId'] as String?) ?? '';
+      if (id.isEmpty || id != callId) return null;
+      return CallInvite.fromDoc(id, m);
+    });
   }
 
   Future<void> setStatus({
@@ -193,8 +213,8 @@ class CallService {
     required CallStatus status,
   }) async {
     await _writeWithRetry(
-      () => _db.collection('orders').doc(orderId).collection('calls').doc(callId).update({
-        'status': callStatusName(status),
+      () => _db.collection('orders').doc(orderId).update({
+        'activeCall.status': callStatusName(status),
       }),
       label: 'call status write',
     );
@@ -241,8 +261,8 @@ class CallService {
     }
     try {
       await _writeWithRetry(
-        () => _db.collection('orders').doc(orderId).collection('calls').doc(callId).update({
-          'status': 'ended',
+        () => _db.collection('orders').doc(orderId).update({
+          'activeCall.status': 'ended',
         }),
         label: 'end-call write',
       );

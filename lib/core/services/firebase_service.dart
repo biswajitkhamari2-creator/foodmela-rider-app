@@ -140,6 +140,11 @@ class FirebaseService {
   /// Any notification tapped (foreground/background/killed) — open call UI.
   static void Function(String payload)? onNotificationTap;
 
+  /// Person-to-person voice-call tap (incoming_call push) — open the
+  /// full-screen voice-call UI. Set from main.dart; kept here so the
+  /// notification-tap path never imports call UI directly.
+  static void Function(Map<String, String> data)? onVoiceCallTap;
+
   /// App opened from terminated state via FCM — open call UI (verified).
   static void Function(Map<String, String> data)? onFcmOpen;
 
@@ -289,11 +294,16 @@ class FirebaseService {
       initSettings,
       onDidReceiveNotificationResponse: (details) {
         debugPrint('Notification tapped: ${details.payload}');
-        // Tap → open the full-screen incoming-order call UI.
+        // Tap → open the full-screen incoming-order call UI, or the
+        // person-to-person voice-call UI for incoming_call payloads.
         final payload = details.payload ?? '';
         if (payload.isNotEmpty) {
           try {
-            onNotificationTap?.call(payload);
+            if (payload.contains('incoming_call')) {
+              onVoiceCallTap?.call(_strMap(payload));
+            } else {
+              onNotificationTap?.call(payload);
+            }
           } catch (e) {
             debugPrint('⚠️ notification-tap hook notice: $e');
           }
@@ -950,6 +960,22 @@ class FirebaseService {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+  /// Parse a "{k: v, ...}" push-data string back into a map.
+  static Map<String, String> _strMap(String payload) {
+    final out = <String, String>{};
+    try {
+      var s = payload.trim();
+      if (s.startsWith('{')) s = s.substring(1);
+      if (s.endsWith('}')) s = s.substring(0, s.length - 1);
+      for (final part in s.split(', ')) {
+        final i = part.indexOf(':');
+        if (i <= 0) continue;
+        out[part.substring(0, i).trim()] = part.substring(i + 1).trim();
+      }
+    } catch (_) {}
+    return out;
+  }
+
   static String _generateOtp() {
     final now = DateTime.now();
     return ((now.minute + now.second + 1000) % 9000 + 1000).toString();

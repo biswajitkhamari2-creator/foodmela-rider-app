@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'call_config.dart';
 import 'call_models.dart';
+import 'call_permissions.dart';
 import 'call_service.dart';
 import 'active_call_screen.dart';
 import 'outgoing_call_screen.dart';
@@ -37,6 +38,17 @@ class CallLauncher {
     if (myId.isEmpty) {
       earlyMessenger.showSnackBar(
           const SnackBar(content: Text('Please login first to place a call')));
+      return;
+    }
+
+    // MANDATORY permissions (mic + notifications + lock-screen ring).
+    if (!context.mounted) return;
+    final allowed = await CallPermissions.ensureForCall(context);
+    if (!allowed) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Call permissions are required — grant them to call')));
+      }
       return;
     }
 

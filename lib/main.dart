@@ -7,9 +7,24 @@ import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/rider_dashboard_screen.dart';
+import 'package:food_track/features/calling/incoming_call_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 final GlobalKey<NavigatorState> riderNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Voice-call push (terminated/background tap) → full-screen call UI.
+/// Rider identity resolves from the saved session; logged-out → no-op.
+Future<void> _openVoiceCallFromPush(Map<String, String> data) async {
+  try {
+    final session = await RiderAuthService.instance.getSession();
+    final uid = session?['uid'] ?? '';
+    if (uid.isEmpty) return;
+    final partnerId = session?['partnerId'] ?? '';
+    final phone = session?['phone'] ?? '';
+    final myId = partnerId.isNotEmpty ? partnerId : (phone.isNotEmpty ? phone : 'rider');
+    await IncomingCallRouter.openFromPayload(data, myId: myId, myRole: 'rider');
+  } catch (_) {}
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +36,22 @@ void main() async {
     // Full-screen incoming-order call UI (foreground FCM + tap-to-open).
     IncomingOrderCall.navigatorKey = riderNavigatorKey;
     IncomingOrderCall.ensureInitialized();
+    // Person-to-person voice-call tap routing (terminated/background/lock).
+    IncomingCallRouter.navigatorKey = riderNavigatorKey;
+    FirebaseService.onFcmOpen = (data) {
+      try {
+        if ((data['type'] ?? '') == 'incoming_call') {
+          _openVoiceCallFromPush(data);
+        }
+      } catch (_) {}
+    };
+    FirebaseService.onVoiceCallTap = (data) {
+      try {
+        if ((data['type'] ?? '') == 'incoming_call') {
+          _openVoiceCallFromPush(data);
+        }
+      } catch (_) {}
+    };
   } catch (e) {
     debugPrint('Init notice: $e');
   }

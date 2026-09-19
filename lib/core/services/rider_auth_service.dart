@@ -60,6 +60,16 @@ class RiderAuthService {
       final t = (b['apiToken'] as String?) ?? '';
       if (t.isEmpty) return;
       (await SharedPreferences.getInstance()).setString(_kRiderApiToken, t);
+      // Firestore sign-in with the backend-minted custom token so the
+      // hardened rules (isRider → users/{uid} role) let orders stream in.
+      // Without this, login succeeds but the dashboard shows "Session
+      // expired" on every orders read (permission-denied).
+      final ft = (b['firebaseToken'] as String?) ?? '';
+      if (ft.isNotEmpty) {
+        try {
+          await FirebaseAuth.instance.signInWithCustomToken(ft);
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 

@@ -13,6 +13,7 @@ import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/rider_dashboard_screen.dart';
 import 'package:food_track/features/calling/incoming_call_router.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final GlobalKey<NavigatorState> riderNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -35,14 +36,23 @@ void main() async {
   // MUST be registered at top-level before any Firebase init — handles FCM when app is killed
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   try {
-    // Startup permission bundle: notification + mic upfront so calls ring
-    // and connect without mid-call prompts. Install-time (normal) permissions
-    // like VIBRATE / WAKE_LOCK / FULL_SCREEN_INTENT are auto-granted from
-    // the manifest — only these dangerous ones need runtime asking.
-    await Permission.notification.request();
-    await Permission.microphone.request();
+    // Startup permission bundle: asked ONCE per install (persisted flag),
+    // never on every cold start. Only ungranted permissions are requested.
+    // Data-clear/reinstall resets the flag (correct: OS revokes grants too).
     try {
-      await Permission.ignoreBatteryOptimizations.request();
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('startupPermsAsked') != true) {
+        if (!await Permission.notification.isGranted) {
+          await Permission.notification.request();
+        }
+        if (!await Permission.microphone.isGranted) {
+          await Permission.microphone.request();
+        }
+        try {
+          await Permission.ignoreBatteryOptimizations.request();
+        } catch (_) {}
+        await prefs.setBool('startupPermsAsked', true);
+      }
     } catch (_) {}
     await FirebaseService.initialize();
     // Full-screen incoming-order call UI (foreground FCM + tap-to-open).

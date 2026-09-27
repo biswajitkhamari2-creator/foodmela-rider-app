@@ -11,6 +11,10 @@ import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
 import 'package:food_track/core/services/order_ringtone_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/call_models.dart';
+import 'package:food_track/features/calling/call_service.dart';
+import 'package:food_track/features/calling/incoming_call_screen.dart';
 import 'package:food_track/features/rider/active_delivery_screen.dart';
 import 'package:food_track/features/rider/rider_wallet_screen.dart';
 import 'package:food_track/features/rider/incoming_order_screen.dart';
@@ -79,6 +83,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
   bool _isOnline = true;
+  // ── Global incoming-call listening (rider side) ──────────────────────────
+  // Dashboard watches MY active deliveries for ringing invites, so the call
+  // rings even when ActiveDeliveryScreen isn't open. One sub per order.
+  final Map<String, StreamSubscription<List<CallInvite>>> _callSubs = {};
+  final Set<String> _shownCallIds = {};
 
   String get _riderName => widget.riderData?['name'] as String? ?? 'Delivery Partner';
   String get _riderPartnerId => widget.riderData?['partnerId'] as String? ?? '';
@@ -107,16 +116,24 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     });
   }
 
-  /// Mandatory full-screen permission prompt for EVERY rider. Shows on each
-  /// dashboard open until granted. UNCONDITIONAL — the native check returns
-  /// true even while the OS still blocks full-screen, so never gate on it.
-  /// ALLOW opens the exact Settings page; LATER keeps the yellow banner.
-  /// Skipped only when the rider granted in THIS session (no nagging).
+  /// Permission explainer: shown ONCE per install (persisted flag), not on
+  /// every dashboard open. If the rider dismisses with "Remind Later", the
+  /// non-blocking yellow banner remains — no more repeated modal nagging.
+  /// Data-clear/reinstall resets the flag (correct: OS revokes grants too).
   bool _askedMustThisSession = false;
   Future<void> _askFullScreenPermissionMust() async {
     if (!mounted || _askedMustThisSession) return;
     _askedMustThisSession = true;
-    await OrderPermissionSetupDialog.checkAndPrompt(context);
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('permExplainerShown') == true) return;
+    if (!mounted) return;
+    final ctx = context;
+    try {
+      await OrderPermissionSetupDialog.checkAndPrompt(ctx);
+    } catch (_) {}
+    try {
+      await prefs.setBool('permExplainerShown', true);
+    } catch (_) {}
     if (mounted) {
       _refreshFullScreenState();
     }
@@ -167,8 +184,74 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ordersSub?.cancel();
+    for (final s in _callSubs.values) {
+      s.cancel();
+    }
+    _callSubs.clear();
     OrderRingtoneService.stopAll();
     super.dispose();
+  }
+
+  /// Watch my active deliveries for incoming customer calls.
+  /// Called on every orders snapshot — adds subs for new actives, drops finished.
+  void _syncCallListening(List<QueryDocumentSnapshot<Map<String, dynamic>>> activeDocs) {
+    final myActives = <String>{};
+    for (final doc in activeDocs) {
+      final data = doc.data();
+      final orderId = data['orderId'] as String? ?? doc.id;
+      final riderId = data['riderId'] as String?;
+      if (riderId == _riderId) myActives.add(orderId);
+    }
+    // Drop subs for orders no longer mine
+    for (final id in _callSubs.keys.toList()) {
+      if (!myActives.contains(id)) {
+        _callSubs.remove(id)?.cancel();
+      }
+    }
+    // Add subs for new actives
+    for (final orderId in myActives) {
+      if (_callSubs.containsKey(orderId)) continue;
+      _callSubs[orderId] = CallService.instance
+          .incomingCallStream(orderId: orderId, myId: _riderId)
+          .listen((invites) => _onCallInvites(orderId, invites));
+    }
+  }
+
+  void _onCallInvites(String orderId, List<CallInvite> invites) {
+    if (!mounted || !_isOnline) return;
+    final fresh = invites.where((i) =>
+        i.status == CallStatus.ringing &&
+        !_shownCallIds.contains(i.callId) &&
+        DateTime.now().difference(i.createdAt).inSeconds < 60);
+    for (final invite in fresh) {
+      _shownCallIds.add(invite.callId);
+      OrderRingtoneService.startRinging('call_$orderId');
+      if (!mounted) return;
+      Navigator.of(context)
+          .push(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => IncomingCallScreen(
+          orderId: invite.orderId,
+          callerLabel: invite.callerLabel,
+          onAccept: () {
+            Navigator.of(context).pop();
+            OrderRingtoneService.stopRinging('call_$orderId');
+            CallLauncher.answerCall(
+              context: context,
+              invite: invite,
+              myId: _riderId,
+              myRole: 'rider',
+            );
+          },
+          onDecline: () {
+            Navigator.of(context).pop();
+            OrderRingtoneService.stopRinging('call_$orderId');
+            CallLauncher.declineCall(invite);
+          },
+        ),
+      ))
+          .then((_) => OrderRingtoneService.stopRinging('call_$orderId'));
+    }
   }
 
   Future<void> _attachOrdersListenerWithRetry() async {
@@ -398,14 +481,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final route = _incomingRoutes.remove(orderId);
     IncomingOrderCall.dismiss(orderId);
     OrderRingtoneService.stopRinging(orderId);
-    if (route == null) return;
-    final nav = route.navigator;
-    if (nav == null) return;
-    try {
-      nav.removeRoute(route);
-    } catch (_) {
-      // Already popped (e.g. user pressed back) — nothing to do
-    }
+    if (route == null || !mounted) return;
+    // removeRoute during another transition (push/pop animation in flight)
+    // trips Navigator._debugLocked. Defer to end of frame so any in-flight
+    // transition completes first; guard isCurrent in case it already popped.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final nav = route.navigator;
+        if (nav == null || !route.isCurrent) return;
+        nav.removeRoute(route);
+      } catch (_) {
+        // Already popped (e.g. user pressed back) — nothing to do
+      }
+    });
   }
 
   /// VIEW ORDER from the incoming call screen: read-only detail sheet over
@@ -554,14 +643,19 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     try {
       final success = await FirebaseService.acceptOrder(orderId: orderId, riderName: _riderName, riderId: _riderId);
       if (!mounted) return;
+      // Close the loader via the ROOT navigator (dialogs always live there),
+      // then let the frame settle before any further navigation — pushing
+      // while the pop transition is still in flight trips _debugLocked.
       Navigator.of(context, rootNavigator: true).pop(); // close loader
-      setState(() => _acceptingOrderIds.remove(orderId));
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      if (mounted) setState(() => _acceptingOrderIds.remove(orderId));
       if (success) {
         // Remember claim locally — snapshot echo delay can't re-ring this order
         _claimedOrderIds.add(orderId);
         _notifiedOrderIds.add(orderId);
         _saveNotifiedIds();
-        Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(backgroundColor: const Color(0xFFD97706), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Row(children: [const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text('Order already taken by another rider', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))) ])),
@@ -797,7 +891,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             }).toList();
             // ── Global incoming-call watch: ring even if delivery screen closed ──
             WidgetsBinding.instance.addPostFrameCallback((_) {
-
+              if (mounted) _syncCallListening(activeDocs);
             });
             final completedDocs = uniqueDocs.where((doc) {
               final d = doc.data();

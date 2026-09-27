@@ -379,6 +379,12 @@ class FirebaseService {
       // tray notification. The hook also starts the looping ringtone.
       if (dataType == 'new_order' || title.contains('New Order') || message.data.containsKey('orderId')) {
         final orderId = message.data['orderId']?.toString() ?? '';
+        // Settled orders (accepted/rejected/cancelled/taken) NEVER re-fire —
+        // repeated FCM redelivery for the same order is dropped here.
+        if (orderId.isNotEmpty && _settledOrderIds.contains(orderId)) {
+          debugPrint('ℹ️ [RIDER FCM] dropped redelivery for settled $orderId');
+          return;
+        }
         final data = message.data
             .map((k, v) => MapEntry(k, v?.toString() ?? ''));
         try {
@@ -955,6 +961,40 @@ class FirebaseService {
   }
 
   // ── Notify Driver via Local Push ─────────────────────────────────────────────
+  /// Terminal states: once an order reaches one, it must NEVER notify again
+  /// for this rider session (accept/reject/cancel echo, snapshot replay).
+  static final Set<String> _settledOrderIds = {};
+
+  /// Mark an order settled (accepted / rejected / cancelled / taken).
+  /// Clears its tray notification + ringtone and blocks future re-notify.
+  static Future<void> settleOrder(String orderId) async {
+    if (orderId.isEmpty) return;
+    _settledOrderIds.add(orderId);
+    if (_settledOrderIds.length > 500) {
+      _settledOrderIds.remove(_settledOrderIds.first);
+    }
+    _notifiedOrderIds.remove(orderId);
+    try {
+      await dismissOrderNotification(orderId);
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+          'rider_settled_orders', _settledOrderIds.toList());
+    } catch (_) {}
+  }
+
+  static bool isOrderSettled(String orderId) =>
+      _settledOrderIds.contains(orderId);
+
+  static Future<void> loadSettledOrders() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('rider_settled_orders') ?? [];
+      _settledOrderIds.addAll(saved);
+    } catch (_) {}
+  }
+
   static Future<void> notifyDriverNewOrder({
     required String orderId,
     required String customerName,
@@ -964,6 +1004,13 @@ class FirebaseService {
     String items = '',
     String orderCategoryLabel = '',
   }) async {
+    if (orderId.isEmpty) return;
+    // Settled orders (accepted/rejected/cancelled/taken) NEVER re-notify —
+    // kills the repeated-notification bug at the single choke point.
+    if (_settledOrderIds.contains(orderId)) {
+      debugPrint('ℹ️ Notification skipped (settled): $orderId');
+      return;
+    }
     if (_notifiedOrderIds.contains(orderId)) {
       debugPrint('ℹ️ Notification skipped (already shown): $orderId');
       return;

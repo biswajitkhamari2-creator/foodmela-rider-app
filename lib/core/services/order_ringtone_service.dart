@@ -52,15 +52,27 @@ class OrderRingtoneService {
 
   /// Stop ringing for one order. The player only goes silent when no other
   /// unaccepted order still needs ringing.
+  /// Idempotent + race-safe: concurrent stop calls for the same order can't
+  /// resurrect or double-stop the player. Settles the order in
+  /// FirebaseService so it can never re-ring from a snapshot replay.
+  static final Set<String> _stopping = {};
+
   static Future<void> stopRinging(String orderId) async {
-    _ringingOrderIds.remove(orderId);
-    _nativeActiveIds.remove(orderId);
-    await NativeOrderAlert.stop(orderId);
-    if (_ringingOrderIds.isNotEmpty) {
-      debugPrint('📞 Still ringing for ${_ringingOrderIds.length} order(s)');
-      return;
+    if (orderId.isEmpty) return;
+    if (_stopping.contains(orderId)) return;
+    _stopping.add(orderId);
+    try {
+      _ringingOrderIds.remove(orderId);
+      _nativeActiveIds.remove(orderId);
+      await NativeOrderAlert.stop(orderId);
+      if (_ringingOrderIds.isNotEmpty) {
+        debugPrint('📞 Still ringing for ${_ringingOrderIds.length} order(s)');
+        return;
+      }
+      await stopAll();
+    } finally {
+      _stopping.remove(orderId);
     }
-    await stopAll();
   }
 
   static Future<void> stopAll() async {

@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_gold.dart';
+import 'package:food_track/core/state/rider_theme_state.dart';
 import 'package:food_track/core/utils/privacy.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/incoming_order_call.dart';
@@ -104,6 +106,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadNotifiedIds();
+    // Restore settled (accepted/rejected/cancelled) IDs so restarts can
+    // never re-ring or re-notify them — the single choke point in
+    // FirebaseService.notifyDriverNewOrder enforces this.
+    FirebaseService.loadSettledOrders();
     _attachOrdersListenerWithRetry();
     // Re-subscribe to FCM topic on every dashboard init (covers re-login after logout)
     FirebaseService.subscribeToRiderNotifications();
@@ -605,7 +611,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   // ── Reject: local hide (no backend write — order stays available for other riders)
   void _rejectOrder(String orderId) {
     OrderRingtoneService.stopRinging(orderId);
-    FirebaseService.dismissOrderNotification(orderId);
+    FirebaseService.settleOrder(orderId);
     _dismissIncomingOrderScreen(orderId);
     setState(() => _rejectedOrderIds.add(orderId));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -626,7 +632,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   Future<void> _acceptOrder(String orderId, String customerName, String customerPhone, String address, String itemsSummary, double totalAmount, {double? deliveryLat, double? deliveryLng}) async {
     if (_acceptingOrderIds.contains(orderId) || _claimedOrderIds.contains(orderId)) return; // Prevent double-tap
     OrderRingtoneService.stopRinging(orderId);
-    FirebaseService.dismissOrderNotification(orderId);
+    FirebaseService.settleOrder(orderId);
     _dismissIncomingOrderScreen(orderId);
     setState(() => _acceptingOrderIds.add(orderId));
     // Show instant feedback — blocking loader so one tap is enough
@@ -670,74 +676,310 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
+  /// Premium profile sheet — read-only IDs/phone, theme switch, logout.
+  /// Rider ID, phone, customer ID are display-only (never editable).
   void _showRiderProfileModal(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink = isDark ? RiderGold.inkDark : RiderGold.inkLight;
+    final muted = isDark ? RiderGold.mutedDark : RiderGold.mutedLight;
+    final cardBg = isDark ? RiderGold.cardDark : Colors.white;
+    // Customer ID: surfaced when the backend/session carries one, else hidden.
+    final customerId = (widget.riderData?['customerId'] ??
+            widget.riderData?['customer_id'] ??
+            widget.riderData?['uid'] ??
+            '')
+        .toString();
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: FoodMelaaColors.borderGrey, borderRadius: BorderRadius.circular(4)))),
-            const SizedBox(height: 16),
-            // Premium header — avatar on RIGHT
-            Row(
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetCtx) => Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: isDark
+                              ? RiderGold.borderDark
+                              : FoodMelaaColors.borderGrey,
+                          borderRadius: BorderRadius.circular(4)))),
+              const SizedBox(height: 16),
+              // Golden identity header
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: RiderGold.headerGradient(),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                        color: RiderGold.gold.withValues(alpha: 0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5)),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            width: 2),
+                      ),
+                      child: const Icon(Icons.person_rounded,
+                          size: 30, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_riderName,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          Text('Delivery Partner',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color:
+                                      Colors.white.withValues(alpha: 0.85))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Read-only identity fields
+              _goldReadOnlyRow(
+                  context, Icons.badge_rounded, 'Rider ID',
+                  _riderPartnerId.isNotEmpty ? _riderPartnerId : '—'),
+              const SizedBox(height: 8),
+              _goldReadOnlyRow(context, Icons.phone_rounded,
+                  'Registered Mobile',
+                  _riderPhone.isNotEmpty ? _riderPhone : '—'),
+              if (customerId.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _goldReadOnlyRow(
+                    context, Icons.person_outline_rounded, 'Customer ID', customerId),
+              ],
+              if (_riderEmail.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _goldReadOnlyRow(
+                    context, Icons.email_rounded, 'Email', _riderEmail),
+              ],
+              const SizedBox(height: 8),
+              _profileStatusRow('Account Status', 'Verified Partner',
+                  const Color(0xFF10B981)),
+              const SizedBox(height: 8),
+              _profileStatusRow(
+                  'Availability',
+                  _isOnline
+                      ? 'Online — Receiving orders'
+                      : 'Offline — Not receiving orders',
+                  _isOnline
+                      ? const Color(0xFF10B981)
+                      : FoodMelaaColors.error),
+              const SizedBox(height: 14),
+              // Appearance — persisted via RiderThemeState (SharedPreferences)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? RiderGold.surfaceDark
+                      : RiderGold.goldWash,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: isDark
+                          ? RiderGold.borderDark
+                          : RiderGold.goldBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('APPEARANCE',
+                        style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: muted)),
+                    const SizedBox(height: 10),
+                    _themeOption(
+                        sheetCtx, 'Light', Icons.light_mode_rounded,
+                        ThemeMode.light, ink, muted, cardBg),
+                    const SizedBox(height: 8),
+                    _themeOption(sheetCtx, 'Dark', Icons.dark_mode_rounded,
+                        ThemeMode.dark, ink, muted, cardBg),
+                    const SizedBox(height: 8),
+                    _themeOption(sheetCtx, 'System default',
+                        Icons.settings_suggest_rounded, ThemeMode.system,
+                        ink, muted, cardBg),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await FirebaseService
+                          .unsubscribeFromRiderNotifications();
+                    } catch (_) {}
+                    try {
+                      await _ordersSub?.cancel();
+                    } catch (_) {}
+                    try {
+                      await RiderAuthService.instance.logout();
+                    } catch (_) {}
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const RiderLoginScreen()),
+                          (route) => false);
+                    }
+                  },
+                  icon: const Icon(Icons.logout_rounded,
+                      color: Colors.white, size: 18),
+                  label: Text('Log Out',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: FoodMelaaColors.error,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14))),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Read-only identity row — value can be copied, never edited.
+  Widget _goldReadOnlyRow(
+      BuildContext context, IconData icon, String label, String value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink = isDark ? RiderGold.inkDark : RiderGold.inkLight;
+    final muted = isDark ? RiderGold.mutedDark : RiderGold.mutedLight;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? RiderGold.surfaceDark : RiderGold.goldWash,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isDark ? RiderGold.borderDark : RiderGold.goldBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: RiderGold.gold),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_riderName, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800, color: FoodMelaaColors.textDark)),
-                      const SizedBox(height: 4),
-                      _profileRow(Icons.badge_rounded, 'Partner ID', _riderPartnerId.isNotEmpty ? _riderPartnerId : '—'),
-                      const SizedBox(height: 4),
-                      _profileRow(Icons.phone_rounded, 'Phone', _riderPhone.isNotEmpty ? _riderPhone : '—'),
-                      const SizedBox(height: 4),
-                      _profileRow(Icons.email_rounded, 'Email', _riderEmail.isNotEmpty ? _riderEmail : '—'),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: const Color(0xFF10B981).withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))],
-                  ),
-                  child: const Icon(Icons.person_rounded, size: 36, color: Colors.white),
-                ),
+                Text(label.toUpperCase(),
+                    style: GoogleFonts.poppins(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        color: muted)),
+                const SizedBox(height: 1),
+                Text(value,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: ink),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ],
             ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: FoodMelaaColors.borderLight),
-            const SizedBox(height: 16),
-            _profileStatusRow('Account Status', 'Verified Partner', const Color(0xFF10B981)),
-            const SizedBox(height: 10),
-            _profileStatusRow('Availability', _isOnline ? 'Online — Receiving orders' : 'Offline — Not receiving orders', _isOnline ? const Color(0xFF10B981) : FoodMelaaColors.error),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  try { await FirebaseService.unsubscribeFromRiderNotifications(); } catch (_) {}
-                  try { await _ordersSub?.cancel(); } catch (_) {}
-                  try { await RiderAuthService.instance.logout(); } catch (_) {}
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const RiderLoginScreen()), (route) => false);
-                  }
-                },
-                icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 18),
-                label: Text('Log Out', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                style: ElevatedButton.styleFrom(backgroundColor: FoodMelaaColors.error, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-              ),
+          ),
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('$label copied',
+                    style: GoogleFonts.poppins(fontSize: 12)),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 1),
+              ));
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child:
+                  Icon(Icons.copy_rounded, size: 14, color: RiderGold.gold),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeOption(BuildContext context, String label, IconData icon,
+      ThemeMode mode, Color ink, Color muted, Color cardBg) {
+    final selected = riderThemeState.mode == mode;
+    return InkWell(
+      onTap: () {
+        riderThemeState.setMode(mode);
+        setState(() {});
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? RiderGold.gold.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? RiderGold.gold : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 18, color: selected ? RiderGold.gold : muted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500,
+                      color: ink)),
+            ),
+            if (selected)
+              const Icon(Icons.check_circle_rounded,
+                  size: 18, color: RiderGold.gold),
           ],
         ),
       ),
@@ -764,37 +1006,58 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: _isDark ? const Color(0xFF0F1115) : const Color(0xFFF1F5F9),
+        backgroundColor: RiderGold.scaffold(context),
         appBar: AppBar(
-          backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(gradient: RiderGold.headerGradient()),
+          ),
+          // Profile icon on the EXTREME LEFT of the header (spec point 2/11).
+          leading: GestureDetector(
+            onTap: () => _showRiderProfileModal(context),
+            child: Container(
+              margin: const EdgeInsets.only(left: 12, top: 10, bottom: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.22),
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.55), width: 1.5),
+              ),
+              child: const Icon(Icons.person_rounded,
+                  color: Colors.white, size: 20),
+            ),
+          ),
           title: Row(
             children: [
-              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delivery_dining_rounded, color: FoodMelaaColors.riderPrimary, size: 18)),
-              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${_greeting()}, ${_riderName.split(' ').first}', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : const Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
-                    Text(_riderPartnerId.isNotEmpty ? _riderPartnerId : 'Food Mela Delivery', style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textSecondary), overflow: TextOverflow.ellipsis),
+                    Text('${_greeting()}, ${_riderName.split(' ').first}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        softWrap: false),
+                    Text(
+                        _riderPartnerId.isNotEmpty
+                            ? _riderPartnerId
+                            : 'Food Mela Delivery',
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.85)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        softWrap: false),
                   ],
                 ),
               ),
             ],
           ),
           actions: [
-            GestureDetector(
-              onTap: () => _showRiderProfileModal(context),
-              child: Container(
-                margin: const EdgeInsets.only(right: 8),
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)]), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFF10B981).withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))]),
-                child: const Icon(Icons.person_rounded, color: Colors.white, size: 18),
-              ),
-            ),
             Container(
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -811,19 +1074,39 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ),
           ],
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
+            preferredSize: const Size.fromHeight(56),
             child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              decoration: BoxDecoration(color: _isDark ? const Color(0xFF27272A) : const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(14)),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(30),
+              ),
               child: TabBar(
-                indicator: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(12)),
+                indicator: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(26),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
-                labelColor: Colors.white,
-                unselectedLabelColor: _isDark ? Colors.white70 : const Color(0xFF475569),
-                labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 12.5),
-                unselectedLabelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12.5),
-                tabs: const [Tab(text: 'Active'), Tab(text: 'History'), Tab(text: 'Cancelled')],
+                labelColor: RiderGold.goldDeep,
+                unselectedLabelColor: Colors.white,
+                labelStyle: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w800, fontSize: 12.5),
+                unselectedLabelStyle: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600, fontSize: 12.5),
+                tabs: const [
+                  Tab(text: 'Active Orders'),
+                  Tab(text: 'History'),
+                  Tab(text: 'Cancelled'),
+                ],
               ),
             ),
           ),
@@ -977,14 +1260,27 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       ),
                     ),
                   ),
-                // Stats banner — premium
+                // Stats banner — golden gradient premium
                 Container(
                   margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: FoodMelaaColors.borderLight), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))]),
+                  decoration: BoxDecoration(
+                    gradient: RiderGold.headerGradient(),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                          color: RiderGold.gold.withValues(alpha: 0.3),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5)),
+                    ],
+                  ),
                   child: Row(
                     children: [
-                      Expanded(child: _statCard('DELIVERED', '${earnedDocs.length} Orders', Icons.check_circle_rounded, FoodMelaaColors.riderPrimary, FoodMelaaColors.riderPrimaryLight)),
+                      Expanded(
+                          child: _goldStatCard(
+                              'DELIVERED',
+                              '${earnedDocs.length} Orders',
+                              Icons.check_circle_rounded)),
                       const SizedBox(width: 12),
                       // EARNINGS → opens premium Wallet (withdrawals + history)
                       Expanded(
@@ -992,20 +1288,34 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => RiderWalletScreen(riderId: _riderId, riderName: _riderName),
+                              builder: (_) => RiderWalletScreen(
+                                  riderId: _riderId,
+                                  riderName: _riderName),
                             ),
                           ),
                           child: Stack(
                             children: [
-                              _statCard('EARNINGS', '₹${totalEarnings.toInt()}', Icons.account_balance_wallet_rounded, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+                              _goldStatCard(
+                                  'EARNINGS',
+                                  '₹${totalEarnings.toInt()}',
+                                  Icons
+                                      .account_balance_wallet_rounded),
                               Positioned(
                                 top: 6,
                                 right: 6,
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                  decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(8)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.25),
+                                      borderRadius:
+                                          BorderRadius.circular(8)),
                                   child: Text('WALLET ›',
-                                      style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white)),
                                 ),
                               ),
                             ],
@@ -1028,16 +1338,44 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             );
   }
 
-  Widget _statCard(String label, String value, IconData icon, Color color, Color bg) {
+  /// Golden stat tile on the gradient banner — white text, translucent tile.
+  Widget _goldStatCard(String label, String value, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: color.withValues(alpha: 0.15))),
+      decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: Colors.white.withValues(alpha: 0.35))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: color, letterSpacing: 0.6)),
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.85),
+                  letterSpacing: 0.6)),
           const SizedBox(height: 6),
-          Row(children: [Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: color, shape: BoxShape.circle), child: Icon(icon, color: Colors.white, size: 12)), const SizedBox(width: 8), Text(value, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: FoodMelaaColors.textDark))]),
+          Row(children: [
+            Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    shape: BoxShape.circle),
+                child:
+                    Icon(icon, color: Colors.white, size: 12)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(value,
+                  style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ]),
         ],
       ),
     );

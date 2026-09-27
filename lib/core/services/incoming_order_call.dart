@@ -75,6 +75,9 @@ class IncomingOrderCall {
     var d = Map<String, String>.from(data);
     final orderId = (d['orderId'] ?? '').trim();
     if (orderId.isEmpty || _routes.containsKey(orderId) || _shownIds.contains(orderId)) return;
+    // Settled orders (accepted/rejected/cancelled/taken) NEVER re-open —
+    // repeated FCM/snapshot redelivery for the same order is dropped here.
+    if (FirebaseService.isOrderSettled(orderId)) return;
 
     // Must be a logged-in rider — otherwise stay on login, notification only.
     Map<String, String>? session;
@@ -134,7 +137,7 @@ class IncomingOrderCall {
         onAccept: () => _accept(orderId, snapshot, riderName, riderId),
         onDecline: () {
           OrderRingtoneService.stopRinging(orderId);
-          FirebaseService.dismissOrderNotification(orderId);
+          FirebaseService.settleOrder(orderId);
           dismiss(orderId);
         },
         // VIEW ORDER: read-only detail sheet over the ringing call UI.
@@ -224,7 +227,7 @@ class IncomingOrderCall {
     final nav = navigatorKey?.currentState;
     if (nav == null) return;
     OrderRingtoneService.stopRinging(orderId);
-    FirebaseService.dismissOrderNotification(orderId);
+    FirebaseService.settleOrder(orderId);
     dismiss(orderId);
     final messenger = ScaffoldMessenger.maybeOf(nav.context);
     final rootNav = Navigator.of(nav.context, rootNavigator: true);

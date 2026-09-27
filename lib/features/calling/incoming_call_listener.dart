@@ -9,9 +9,12 @@
 //   }
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'call_engine.dart';
 import 'call_launcher.dart';
 import 'call_models.dart';
 import 'call_service.dart';
+import 'call_session.dart';
+import 'call_waiting_banner.dart';
 import 'incoming_call_screen.dart';
 
 mixin IncomingCallListener<T extends StatefulWidget> on State<T> {
@@ -48,11 +51,40 @@ mixin IncomingCallListener<T extends StatefulWidget> on State<T> {
     final fresh = invites.where((i) =>
         i.status == CallStatus.ringing &&
         !_shownFor.contains(i.callId) &&
+        // Ignore stale echo of the call already live on this device.
+        !CallSession.isCurrent(i.orderId, i.callId) &&
         DateTime.now().difference(i.createdAt).inSeconds < 60);
     for (final invite in fresh) {
       _shownFor.add(invite.callId);
-      _showIncoming(invite);
+      // BUSY: waiting banner (active call untouched). FREE: full screen.
+      if (CallSession.inCall) {
+        _showWaiting(invite);
+      } else {
+        _showIncoming(invite);
+      }
     }
+  }
+
+  /// New call while busy — banner with Decline / End & Accept.
+  void _showWaiting(CallInvite invite) {
+    CallWaiting.show(
+      context,
+      invite: invite,
+      myId: listenMyId,
+      onActiveEnded: () async {
+        CallEngine.instance.requestEnd();
+        for (var i = 0; i < 50 && CallSession.inCall; i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        if (!mounted) return;
+        await CallLauncher.answerCall(
+          context: context,
+          invite: invite,
+          myId: listenMyId,
+          myRole: listenMyRole,
+        );
+      },
+    );
   }
 
   void _showIncoming(CallInvite invite) {

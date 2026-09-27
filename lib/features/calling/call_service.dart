@@ -21,6 +21,14 @@ import 'package:food_track/core/services/rider_auth_service.dart';
 import 'call_config.dart';
 import 'call_models.dart';
 
+/// Backend rejected the call with 401 — the stored session token is missing
+/// or expired. Only a fresh login can mint a new one.
+class SessionExpiredException implements Exception {
+  const SessionExpiredException();
+  @override
+  String toString() => 'SessionExpiredException: Login required';
+}
+
 class CallToken {
   final String appId;
   final String channelName;
@@ -60,6 +68,8 @@ class CallService {
         // accept any 2xx with success:true.
         final okStatus = res.statusCode >= 200 && res.statusCode < 300;
         if (!okStatus || decoded['success'] != true) {
+          // 401 = session token missing/expired — never retry, surface it.
+          if (res.statusCode == 401) throw const SessionExpiredException();
           final err = Exception((decoded['error'] as String?) ?? '$label failed (${res.statusCode})');
           // 4xx business errors (not found, forbidden) won't fix themselves.
           if (res.statusCode >= 400 && res.statusCode < 500 && res.statusCode != 429) throw err;
@@ -69,7 +79,7 @@ class CallService {
         return decoded;
       },
       label: label,
-      noRetryOn: (e) => !isRetryableError(e),
+      noRetryOn: (e) => e is SessionExpiredException || !isRetryableError(e),
     );
   }
 
@@ -212,23 +222,61 @@ class CallService {
     required String callId,
     required CallStatus status,
   }) async {
+    // Backend first (authoritative lifecycle: accept/reject/end validated +
+    // terminal states locked). Firestore mirrors only what the server allows.
+    try {
+      await _postJson(
+        '/api/calls/$orderId/status',
+        {'callId': callId, 'status': callStatusName(status)},
+        label: 'call status update',
+      );
+    } catch (e) {
+      debugPrint('call status server notice: $e');
+      // 409 = server already moved past this state (ended/missed) — still
+      // mirror locally so the UI stops ringing; never rewind the server.
+      if (!e.toString().contains('already')) rethrow;
+    }
     await _writeWithRetry(
       () => _db.collection('orders').doc(orderId).update({
         'activeCall.status': callStatusName(status),
       }),
-      label: 'call status write',
+      label: 'call status mirror',
     );
-    // Mirror terminal states to backend log (best-effort).
-    if (status == CallStatus.rejected || status == CallStatus.missed || status == CallStatus.failed) {
-      try {
+  }
+
+  /// Caller cancelled while ringing, or 45s ring timeout → server marks the
+  /// call so the recipient's ring dies even if Firestore echo is delayed.
+  Future<void> cancelOrTimeout({
+    required String orderId,
+    required String callId,
+    required bool isTimeout,
+  }) async {
+    try {
+      if (isTimeout) {
+        await _postJson(
+          '/api/calls/$orderId/timeout',
+          {'callId': callId},
+          label: 'call timeout',
+        );
+      } else {
         await _postJson(
           '/api/calls/$orderId/status',
-          {'callId': callId, 'status': callStatusName(status)},
-          label: 'call status mirror',
+          {'callId': callId, 'status': 'cancelled'},
+          label: 'call cancel',
         );
-      } catch (e) {
-        debugPrint('call status mirror notice: $e');
       }
+    } catch (e) {
+      debugPrint('call cancel/timeout notice: $e');
+    }
+    try {
+      await _writeWithRetry(
+        () => _db.collection('orders').doc(orderId).update({
+          'activeCall.status': isTimeout ? 'missed' : 'ended',
+        }),
+        label: 'call cancel mirror',
+      );
+    } catch (e) {
+      debugPrint('call cancel mirror notice: $e');
     }
   }
 

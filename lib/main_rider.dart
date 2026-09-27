@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/incoming_order_call.dart';
@@ -44,8 +45,10 @@ class FoodMelaRiderAppAlt extends StatelessWidget {
       navigatorKey: riderNavigatorKeyAlt,
       title: 'FOOD MELA Partner',
       debugShowCheckedModeBanner: false,
+            themeMode: ThemeMode.system,
       theme: ThemeData(
         useMaterial3: true,
+        brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(
           seedColor: FoodMelaaColors.riderPrimary,
           primary: FoodMelaaColors.riderPrimary,
@@ -68,6 +71,25 @@ class FoodMelaRiderAppAlt extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           ),
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: FoodMelaaColors.riderPrimary,
+          brightness: Brightness.dark,
+          primary: FoodMelaaColors.riderPrimary,
+          secondary: FoodMelaaColors.primary,
+        ),
+        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        scaffoldBackgroundColor: const Color(0xFF0F1115),
+        appBarTheme: AppBarTheme(
+          backgroundColor: const Color(0xFF0F1115),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          titleTextStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
         ),
       ),
       home: const _AuthGateAlt(),
@@ -95,6 +117,14 @@ class _AuthGateAltState extends State<_AuthGateAlt> {
   Future<void> _checkSession() async {
     final session = await RiderAuthService.instance.getSession();
     if (session != null && session['uid']!.isNotEmpty) {
+      try {
+        if (FirebaseAuth.instance.currentUser == null) {
+          await FirebaseAuth.instance.authStateChanges()
+              .firstWhere((u) => u != null)
+              .timeout(const Duration(seconds: 3));
+        }
+      } catch (_) {}
+
       setState(() {
         _isLoggedIn = true;
         _riderData = session;

@@ -782,6 +782,7 @@ class FirebaseService {
     required String orderId,
     required String riderName,
     required String riderId,
+    String? riderPhone,
   }) async {
     if (!_isFirebaseInitialized) return false;
     // ── Enforce partner blocking/approval BEFORE transaction ─────────────────
@@ -839,6 +840,7 @@ class FirebaseService {
           'status': 'Order Accepted ✅',
           'riderName': riderName,
           'riderId': riderId,
+          if (riderPhone != null && riderPhone.isNotEmpty) 'riderPhone': riderPhone,
           'acceptedAt': FieldValue.serverTimestamp(),
         });
         return true;

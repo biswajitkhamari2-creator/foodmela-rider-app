@@ -80,6 +80,7 @@ class CallInvite {
       };
 
   /// Role label shown in UI — never a phone number (privacy).
-  String get callerLabel => callerRole == 'rider' ? 'Assigned Rider' : 'Customer';
-  String get receiverLabel => receiverRole == 'rider' ? 'Assigned Rider' : 'Customer';
+  /// Branded: FoodMela Rider / FoodMela Customer.
+  String get callerLabel => callerRole == 'rider' ? 'FoodMela Rider' : 'FoodMela Customer';
+  String get receiverLabel => receiverRole == 'rider' ? 'FoodMela Rider' : 'FoodMela Customer';
 }

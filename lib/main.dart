@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_theme.dart';
+import 'package:food_track/core/state/rider_theme_state.dart';
 import 'package:food_track/core/services/firebase_service.dart';
+import 'package:food_track/core/services/maintenance_service.dart';
+import 'package:food_track/features/rider/maintenance_screen.dart';
 import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
@@ -55,6 +59,7 @@ void main() async {
   } catch (e) {
     debugPrint('Init notice: $e');
   }
+  riderThemeState = await RiderThemeState.load();
   runApp(const FoodMelaRiderApp());
 }
 
@@ -63,37 +68,35 @@ class FoodMelaRiderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: riderNavigatorKey,
-      title: 'FOOD MELA Partner',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: FoodMelaaColors.riderPrimary,
-          primary: FoodMelaaColors.riderPrimary,
-          secondary: FoodMelaaColors.primary,
-        ),
-        textTheme: GoogleFonts.interTextTheme(),
-        scaffoldBackgroundColor: FoodMelaaColors.background,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: FoodMelaaColors.textDark,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          titleTextStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: FoodMelaaColors.riderPrimary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-          ),
-        ),
+    return ListenableBuilder(
+      listenable: riderThemeState,
+      // 🛠️ Maintenance ON (admin panel → Settings) → poori app ki jagah animated screen.
+      builder: (context, _) => StreamBuilder<({bool enabled, String eta})>(
+        stream: MaintenanceService.instance.watch(),
+        initialData: (enabled: false, eta: '30 min'),
+        builder: (context, snap) {
+          final m = snap.data ?? (enabled: false, eta: '30 min');
+          if (m.enabled) {
+            return MaterialApp(
+              title: 'FOOD MELA Partner',
+              debugShowCheckedModeBanner: false,
+              theme: RiderTheme.light(),
+              darkTheme: RiderTheme.dark(),
+              themeMode: riderThemeState.mode,
+              home: RiderMaintenanceScreen(eta: m.eta),
+            );
+          }
+          return MaterialApp(
+            navigatorKey: riderNavigatorKey,
+            title: 'FOOD MELA Partner',
+            debugShowCheckedModeBanner: false,
+            theme: RiderTheme.light(),
+            darkTheme: RiderTheme.dark(),
+            themeMode: riderThemeState.mode,
+            home: const _AuthGate(),
+          );
+        },
       ),
-      home: const _AuthGate(),
     );
   }
 }
@@ -123,6 +126,18 @@ class _AuthGateState extends State<_AuthGate> {
       // outdated Play services and wrongly kicks riders to login. Firebase
       // Auth persists its own user; Firestore reads will surface any real
       // auth problem naturally.
+      
+      // Fix persistence race condition: wait for Firebase Auth to finish 
+      // restoring the user in the background before mounting the dashboard 
+      // and attaching the Firestore stream, otherwise it fails with permission-denied.
+      try {
+        if (FirebaseAuth.instance.currentUser == null) {
+          await FirebaseAuth.instance.authStateChanges()
+              .firstWhere((u) => u != null)
+              .timeout(const Duration(seconds: 3));
+        }
+      } catch (_) {}
+
       if (mounted) setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
     } else {
       if (mounted) setState(() { _isLoggedIn = false; _loading = false; });

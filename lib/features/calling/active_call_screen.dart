@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'call_engine.dart';
 import 'call_models.dart';
 import 'call_service.dart';
+import 'call_session.dart';
 
 class ActiveCallScreen extends StatefulWidget {
   final String orderId;
@@ -53,8 +54,13 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     final engine = CallEngine.instance;
     engine.onUserJoined = (_) => mounted ? setState(() => _status = 'Connected') : null;
     engine.onUserOffline = (_) => _endCall(remoteEnded: true);
+    // External graceful end (End & Accept from the call-waiting banner).
+    engine.onRequestEnd = () => _endCall();
     try {
       await engine.join(channel: widget.channelName, token: widget.token, uid: widget.uid);
+      // Track the live call — incoming-call paths show a waiting banner
+      // instead of popping over this screen.
+      CallSession.start(orderId: widget.orderId, callId: widget.callId);
       if (widget.startRecording) {
         await CallService.instance.startRecording(orderId: widget.orderId, callId: widget.callId);
       }
@@ -96,6 +102,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     _timer?.cancel();
     await _watch?.cancel();
     await CallEngine.instance.leave();
+    CallSession.endIf(widget.callId);
     if (!remoteEnded) {
       await CallService.instance.stopRecording(
         orderId: widget.orderId,
@@ -110,6 +117,11 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   void dispose() {
     _timer?.cancel();
     _watch?.cancel();
+    // Release the external end hook + session (safety if popped oddly).
+    if (CallEngine.instance.onRequestEnd != null) {
+      CallEngine.instance.onRequestEnd = null;
+    }
+    CallSession.endIf(widget.callId);
     super.dispose();
   }
 

@@ -44,7 +44,12 @@ class RiderAuthService {
   }
 
   /// Exchange the Firebase ID token for a backend rider apiToken.
-  static Future<void> _mintRiderToken(User user) async {
+  /// Returns true ONLY when the Firestore custom token was applied (orders
+  /// will stream). Returns false when the backend rejected the account
+  /// (phone-keyed doc, unapproved, blocked…) — the caller must NOT let the
+  /// user in, otherwise every orders read dies with permission-denied and the
+  /// dashboard shows "Session expired" on every order arrival.
+  static Future<bool> _mintRiderToken(User user, {String phone = ''}) async {
     try {
       final idToken = await user.getIdToken();
       final res = await http
@@ -53,24 +58,60 @@ class RiderAuthService {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $idToken',
               },
-              body: jsonEncode({}))
+              body: jsonEncode(phone.isNotEmpty ? {'phone': phone} : {}))
           .timeout(const Duration(seconds: 15));
-      if (res.statusCode != 200) return;
+      if (res.statusCode != 200) return false;
       final b = jsonDecode(res.body) as Map<String, dynamic>;
       final t = (b['apiToken'] as String?) ?? '';
-      if (t.isEmpty) return;
+      if (t.isEmpty) return false;
       (await SharedPreferences.getInstance()).setString(_kRiderApiToken, t);
       // Firestore sign-in with the backend-minted custom token so the
       // hardened rules (isRider → users/{uid} role) let orders stream in.
-      // Without this, login succeeds but the dashboard shows "Session
-      // expired" on every orders read (permission-denied).
       final ft = (b['firebaseToken'] as String?) ?? '';
-      if (ft.isNotEmpty) {
-        try {
-          await FirebaseAuth.instance.signInWithCustomToken(ft);
-        } catch (_) {}
+      if (ft.isEmpty) return false;
+      try {
+        await FirebaseAuth.instance.signInWithCustomToken(ft);
+      } catch (_) {
+        return false;
       }
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Probe a stored rider apiToken without placing a call: any response
+  /// other than 401 proves the backend still accepts it. Network errors
+  /// return true (don't force logout on flaky 2G).
+  static Future<bool> probeCallToken(String token) async {
+    try {
+      final res = await http
+          .post(Uri.parse('https://foodmela.online/api/calls/FM-HEALTH-PROBE/request'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode({'callerId': 'probe', 'callerRole': 'rider'}))
+          .timeout(const Duration(seconds: 8));
+      return res.statusCode != 401;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// One-time silent repair for a live session whose orders stream died with
+  /// permission-denied (e.g. logged in before the backend knew the phone-keyed
+  /// doc). Returns true when the stream can be re-attached.
+  static Future<bool> refreshFirestoreToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final phone = prefs.getString(_kRiderPhone) ?? '';
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || phone.isEmpty) return false;
+      return await _mintRiderToken(user, phone: phone);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Login with email OR phone + password.
@@ -211,7 +252,14 @@ class RiderAuthService {
     await prefs.setString(_kRiderName, data['name'] as String? ?? '');
     await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
     // SECURITY: mint backend rider apiToken for /api/orders/* + /api/calls/*.
-    await _mintRiderToken(cred.user!);
+    // HARD FAIL: if the Firestore custom token was not applied, orders will
+    // never stream (permission-denied on every read). Do NOT let the user in
+    // with a broken session — sign out with a clear message instead.
+    final minted = await _mintRiderToken(cred.user!, phone: data['phone'] as String? ?? phone);
+    if (!minted) {
+      await _auth.signOut();
+      throw RiderAuthException('Could not verify rider account — please try login again');
+    }
 
     return {
       'uid': uid,

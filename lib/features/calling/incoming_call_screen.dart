@@ -3,14 +3,20 @@
 // slide-to-answer style accept/decline buttons.
 // Shows caller ROLE + order id only — never phone numbers (privacy).
 // LOGIC UNCHANGED: same constructor, same onAccept/onDecline callbacks.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:food_track/core/services/order_ringtone_service.dart';
+import 'call_models.dart';
+import 'call_service.dart';
 
 class IncomingCallScreen extends StatefulWidget {
   final String orderId;
-  final String callerLabel; // 'Assigned Rider' | 'Customer'
+  final String callerLabel; // 'FoodMela Rider' | 'FoodMela Customer'
   final VoidCallback onAccept;
   final VoidCallback onDecline;
+  /// Firestore call doc id — ringtone loops per call, stops on answer/end.
+  final String callId;
 
   const IncomingCallScreen({
     super.key,
@@ -18,6 +24,7 @@ class IncomingCallScreen extends StatefulWidget {
     required this.callerLabel,
     required this.onAccept,
     required this.onDecline,
+    this.callId = '',
   });
 
   @override
@@ -27,6 +34,9 @@ class IncomingCallScreen extends StatefulWidget {
 class _IncomingCallScreenState extends State<IncomingCallScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
+  StreamSubscription<CallInvite?>? _watch;
+
+  String get _ringKey => widget.callId.isNotEmpty ? widget.callId : widget.orderId;
 
   @override
   void initState() {
@@ -35,10 +45,28 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat();
+    // Looping ringtone until accept / decline / dispose.
+    OrderRingtoneService.startRinging(_ringKey);
+    // Caller cancelled / timed out → close screen + stop ring.
+    if (widget.callId.isNotEmpty) {
+      _watch = CallService.instance
+          .watchCall(orderId: widget.orderId, callId: widget.callId)
+          .listen((invite) {
+        if (invite == null) return;
+        if ((invite.status == CallStatus.ended ||
+                invite.status == CallStatus.missed ||
+                invite.status == CallStatus.failed) &&
+            mounted) {
+          Navigator.of(context).pop();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _watch?.cancel();
+    OrderRingtoneService.stopRinging(_ringKey);
     _pulse.dispose();
     super.dispose();
   }
@@ -185,6 +213,15 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                 ),
               ),
               const SizedBox(height: 12),
+              Text(
+                  isCustomer ? 'Calling Customer' : 'Incoming call',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4)),
+              const SizedBox(height: 4),
               Text(widget.callerLabel,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(

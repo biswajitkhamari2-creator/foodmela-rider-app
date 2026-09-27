@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/widgets.dart' show VoidCallback;
 import 'call_config.dart';
 
 class CallEngine {
@@ -24,6 +25,14 @@ class CallEngine {
   void Function(int remoteUid)? onUserOffline;
   void Function()? onLeft;
   void Function(String message)? onError;
+  /// Set by ActiveCallScreen. Lets an external trigger (End & Accept from the
+  /// call-waiting banner) end the live call gracefully: engine leave +
+  /// recording stop + screen pop, exactly like tapping End.
+  VoidCallback? onRequestEnd;
+
+  /// Ask the live call screen (if any) to end itself gracefully. No-op when
+  /// no call screen is up.
+  void requestEnd() => onRequestEnd?.call();
 
   Future<void> _ensureEngine() async {
     if (_engine != null) return;

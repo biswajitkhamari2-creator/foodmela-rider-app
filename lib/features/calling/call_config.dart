@@ -3,7 +3,7 @@
 // the backend (agoraCalls.js) which checks active-order membership.
 class CallConfig {
   // Deployed backend (same one the website uses).
-  static const String backendBaseUrl = 'https://food-mela-backend.vercel.app';
+  static const String backendBaseUrl = 'https://foodmela.online';
 
   // Agora project: FoodMela-Calls (App ID + Token auth).
   static const String agoraAppId = 'ca957bd9daa74c6199bbe2178d8c6b3c';

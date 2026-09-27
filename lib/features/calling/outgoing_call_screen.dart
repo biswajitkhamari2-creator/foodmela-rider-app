@@ -184,6 +184,14 @@ class _OutgoingCallScreenState extends State<OutgoingCallScreen>
                 ),
               ),
               const SizedBox(height: 12),
+              Text('Calling ${widget.peerLabel}',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4)),
+              const SizedBox(height: 4),
               Text(widget.peerLabel,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(

@@ -10,13 +10,26 @@
 //     peerLabel: 'Assigned Rider',       // or 'Customer'
 //   );
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:food_track/core/services/rider_auth_service.dart';
 import 'call_config.dart';
 import 'call_models.dart';
 import 'call_permissions.dart';
 import 'call_service.dart';
 import 'active_call_screen.dart';
 import 'outgoing_call_screen.dart';
+
+/// Readable error snackbar: dark background + white text on every theme.
+SnackBar _callSnack(String msg) => SnackBar(
+      content: Text(msg, style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.white)),
+      backgroundColor: const Color(0xFF1C1815),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
 
 class CallLauncher {
   CallLauncher._();
@@ -56,6 +69,29 @@ class CallLauncher {
     if (!context.mounted) return;
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    // Self-repair: the stored apiToken is HMAC-signed and can expire or be
+    // minted against a rotated secret — a present-but-dead token also 401s.
+    // Probe it with a cheap no-op call; re-mint from the live Firebase
+    // session when the probe fails, so old sessions don't die with a 401.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString('rider_api_token') ?? '';
+      if (stored.isEmpty || !await RiderAuthService.probeCallToken(stored)) {
+        final user = FirebaseAuth.instance.currentUser;
+        final phone = prefs.getString('rider_phone') ?? '';
+        if (user != null && phone.isNotEmpty) {
+          final repaired = await RiderAuthService.refreshFirestoreToken();
+          if (!repaired) {
+            messenger.showSnackBar(_callSnack('Session expired — please logout and login again, then retry the call'));
+            return;
+          }
+        } else {
+          messenger.showSnackBar(_callSnack('Session expired — please logout and login again, then retry the call'));
+          return;
+        }
+      }
+    } catch (_) {}
+    if (!context.mounted) return;
     late CallInvite invite;
     try {
       invite = await CallService.instance.startCall(
@@ -64,7 +100,8 @@ class CallLauncher {
         callerRole: myRole,
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      debugPrint('📞 CALL ERROR RAW: $e');
+      messenger.showSnackBar(_callSnack(_friendlyError(e)));
       return;
     }
 
@@ -93,8 +130,8 @@ class CallLauncher {
     final cancelledByCaller =
         ringingCompleter.isCompleted && await ringingCompleter.future;
     if (cancelledByCaller) {
-      await CallService.instance.setStatus(
-          orderId: orderId, callId: invite.callId, status: CallStatus.ended);
+      await CallService.instance.cancelOrTimeout(
+          orderId: orderId, callId: invite.callId, isTimeout: false);
       return;
     }
     final accepted = await answerFuture;
@@ -104,15 +141,15 @@ class CallLauncher {
     } catch (_) {}
     await ringingFuture;
     if (accepted == null) {
-      await CallService.instance.setStatus(
-          orderId: orderId, callId: invite.callId, status: CallStatus.missed);
+      await CallService.instance.cancelOrTimeout(
+          orderId: orderId, callId: invite.callId, isTimeout: true);
       messenger.showSnackBar(
-          SnackBar(content: Text('No answer — $peerLabel did not pick up')));
+          _callSnack('No answer — $peerLabel did not pick up'));
       return;
     }
     if (!accepted) {
       messenger.showSnackBar(
-          SnackBar(content: Text('$peerLabel declined the call')));
+          _callSnack('$peerLabel declined the call'));
       return;
     }
 
@@ -130,7 +167,8 @@ class CallLauncher {
         ),
       ));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      debugPrint('📞 CALL ERROR RAW: $e');
+      messenger.showSnackBar(_callSnack(_friendlyError(e)));
     }
   }
 
@@ -166,7 +204,8 @@ class CallLauncher {
         ),
       ));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      debugPrint('📞 CALL ERROR RAW: $e');
+      messenger.showSnackBar(_callSnack(_friendlyError(e)));
     }
   }
 
@@ -202,6 +241,10 @@ class CallLauncher {
 
   static String _friendlyError(Object e) {
     final m = e.toString();
+    if (m.contains('SessionExpiredException') || m.contains('Login required')) {
+      return 'Session expired — please logout and login again, then retry the call';
+    }
+    if (m.contains('must be your own')) return 'Authentication error — please logout and login again';
     if (m.contains('Not part of this order')) return 'Only the assigned customer & rider can call on this order';
     if (m.contains('not active')) return 'Calling is available only while the order is active';
     if (m.contains('No rider assigned')) return 'No delivery partner assigned yet — cannot call';

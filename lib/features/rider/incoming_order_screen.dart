@@ -42,6 +42,7 @@ class IncomingOrderScreen extends StatefulWidget {
 
 class _IncomingOrderScreenState extends State<IncomingOrderScreen>
     with SingleTickerProviderStateMixin {
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
@@ -218,7 +219,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _isDark ? const Color(0xFF1C1815) : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -242,7 +243,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                         widget.itemsSummary.isNotEmpty ? widget.itemsSummary : 'Order items ready for pickup',
                         FoodMelaaColors.riderPrimary,
                       ),
-                      const Divider(height: 20, thickness: 1, color: Color(0xFFEEEEEE)),
+                      Divider(height: 20, thickness: 1, color: _isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFEEEEEE)),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -258,7 +259,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                                 style: GoogleFonts.poppins(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: FoodMelaaColors.textDark,
+                                  color: _isDark ? Colors.white : FoodMelaaColors.textDark,
                                 ),
                               ),
                             ],
@@ -422,7 +423,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: FoodMelaaColors.textDark,
+              color: _isDark ? Colors.white : FoodMelaaColors.textDark,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

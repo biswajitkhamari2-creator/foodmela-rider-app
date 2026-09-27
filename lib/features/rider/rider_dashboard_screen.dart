@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +20,8 @@ import 'package:food_track/features/rider/rider_wallet_screen.dart';
 import 'package:food_track/features/rider/incoming_order_screen.dart';
 import 'package:food_track/features/rider/order_permission_setup_dialog.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
+import 'package:food_track/features/rider/widgets/rider_order_card.dart';
+
 
 // ─── Category helpers (mirrors FirebaseService helpers) ─────────────────────
 String _catLabel(String key) {
@@ -37,21 +40,7 @@ String _catLabel(String key) {
   }
 }
 
-String _catIcon(String key) {
-  switch (key.toLowerCase()) {
-    case 'grocery': return '🛒';
-    case 'vegetables': return '🥦';
-    case 'fruits': return '🍎';
-    case 'dairy': return '🥛';
-    case 'eggs_meat': return '🥚';
-    case 'cooked_food': return '🍛';
-    case 'non_veg': return '🍗';
-    case 'sweets': return '🍮';
-    case 'snacks': return '🥙';
-    case 'mixed': return '🍽️';
-    default: return '📦';
-  }
-}
+// _catIcon removed in favor of RiderOrderCard
 
 class RiderDashboardScreen extends StatefulWidget {
   final Map<String, dynamic>? riderData;
@@ -63,6 +52,7 @@ class RiderDashboardScreen extends StatefulWidget {
 
 class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     with WidgetsBindingObserver {
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   final Set<String> _notifiedOrderIds = {};
   final Set<String> _rejectedOrderIds = {}; // Local reject — hides card until refresh
   final Set<String> _acceptingOrderIds = {}; // Prevent double-tap
@@ -596,26 +586,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
-  String _formatDateTime(dynamic timestamp) {
-    if (timestamp == null) {
-      return 'Date N/A';
-    }
-    try {
-      DateTime dt;
-      if (timestamp is Timestamp) {
-        dt = timestamp.toDate();
-      } else if (timestamp is String) {
-        dt = DateTime.parse(timestamp);
-      } else {
-        return 'Date N/A';
-      }
-      final dateStr = '${dt.day}/${dt.month}/${dt.year}';
-      final hourStr = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-      final minStr = dt.minute.toString().padLeft(2, '0');
-      final amPm = dt.hour >= 12 ? 'PM' : 'AM';
-      return '$dateStr at $hourStr:$minStr $amPm';
-    } catch (_) { return 'Date N/A'; }
-  }
+  
 
   // ── Reject: local hide (no backend write — order stays available for other riders)
   void _rejectOrder(String orderId) {
@@ -755,7 +726,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   Widget _profileRow(IconData icon, String label, String value) {
-    return Row(children: [Icon(icon, size: 13, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$label: ', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary)), Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark), overflow: TextOverflow.ellipsis))]);
+    return Row(children: [Icon(icon, size: 13, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$label: ', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary)), Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : const Color(0xFF0F172A)), overflow: TextOverflow.ellipsis))]);
   }
 
   Widget _profileStatusRow(String label, String value, Color color) {
@@ -774,9 +745,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: FoodMelaaColors.background,
+        backgroundColor: _isDark ? const Color(0xFF0F1115) : const Color(0xFFF1F5F9),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
           title: Row(
@@ -787,7 +758,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${_greeting()}, ${_riderName.split(' ').first}', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark), overflow: TextOverflow.ellipsis),
+                    Text('${_greeting()}, ${_riderName.split(' ').first}', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : const Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
                     Text(_riderPartnerId.isNotEmpty ? _riderPartnerId : 'Food Mela Delivery', style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textSecondary), overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -824,13 +795,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             preferredSize: const Size.fromHeight(48),
             child: Container(
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              decoration: BoxDecoration(color: FoodMelaaColors.background, borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(color: _isDark ? const Color(0xFF27272A) : const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(14)),
               child: TabBar(
                 indicator: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(12)),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
                 labelColor: Colors.white,
-                unselectedLabelColor: FoodMelaaColors.textSecondary,
+                unselectedLabelColor: _isDark ? Colors.white70 : const Color(0xFF475569),
                 labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 12.5),
                 unselectedLabelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12.5),
                 tabs: const [Tab(text: 'Active'), Tab(text: 'History'), Tab(text: 'Cancelled')],
@@ -1074,16 +1045,17 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       );
     }
     final children = <Widget>[];
+    int entranceIndex = 0;
     if (activeDocs.isNotEmpty) {
       children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('MY ACTIVE DELIVERIES', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(8)), child: Text('${activeDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
       for (final doc in activeDocs) {
-        children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: true));
+        children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: true).animate().fadeIn(delay: (50 * entranceIndex).ms).slideY(begin: 0.1, curve: Curves.easeOutCubic)); entranceIndex++;
       }
     }
     if (pendingDocs.isNotEmpty) {
       children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('NEW ORDERS', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(8)), child: Text('${pendingDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
       for (final doc in pendingDocs) {
-        children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: false));
+        children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: false).animate().fadeIn(delay: (50 * entranceIndex).ms).slideY(begin: 0.1, curve: Curves.easeOutCubic)); entranceIndex++;
       }
     }
     return ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: children);
@@ -1127,97 +1099,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: completedDocs.length,
-      itemBuilder: (context, index) => _buildCompletedCard(context, completedDocs[index].data(), completedDocs[index].id),
+      itemBuilder: (context, index) => _buildCompletedCard(context, completedDocs[index].data(), completedDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: -0.1, curve: Curves.easeOutCubic),
     );
   }
 
   Widget _buildCompletedCard(BuildContext context, Map<String, dynamic> data, String docId) {
-    final orderId = data['orderId'] as String? ?? docId;
-    final customerName = data['customerName'] as String? ?? 'Customer';
-    final customerPhone = data['customerPhone'] as String? ?? 'N/A';
-    final dateFormatted = _formatDateTime(data['acceptedAt'] ?? data['createdAt']);
-    final catKey = data['orderCategory'] as String? ?? 'general';
-    final catColor = FoodMelaaColors.categoryColor(catKey);
-    return GestureDetector(
-      onTap: () => _showReceiptModal(context, data, docId),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: FoodMelaaColors.borderLight), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))]),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, borderRadius: const BorderRadius.vertical(top: Radius.circular(18))),
-              child: Row(children: [Expanded(child: Text('Order #$orderId', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark))), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)), child: Text('${_catIcon(catKey)} ${_catLabel(catKey)}', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: catColor))), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(8)), child: Text('Delivered', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)))]),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Row(children: [const Icon(Icons.person_outline_rounded, size: 14, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$customerName • ${maskPhone(customerPhone)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark))]), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFFDE68A))), child: Text('+ ₹40', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF92400E))))]),
-                  const SizedBox(height: 8),
-                  Row(children: [const Icon(Icons.access_time_rounded, size: 13, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text(dateFormatted, style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textSecondary))]),
-                  const SizedBox(height: 8),
-                  Row(children: [const Icon(Icons.receipt_long_rounded, size: 13, color: FoodMelaaColors.riderPrimary), const SizedBox(width: 4), Text('Tap for receipt', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.riderPrimary))]),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return RiderOrderCard(
+      data: data,
+      docId: docId,
+      riderId: _riderId,
+      isActiveDelivery: false,
     );
   }
 
-  void _showReceiptModal(BuildContext context, Map<String, dynamic> data, String docId) {
-    final orderId = data['orderId'] as String? ?? docId;
-    final customerName = data['customerName'] as String? ?? 'Customer';
-    final customerPhone = data['customerPhone'] as String? ?? 'N/A';
-    final address = data['address'] as String? ?? 'Address not provided';
-    final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
-    final itemsSummary = data['itemsSummary'] as String? ?? _buildItemsSummary(data['items']);
-    final dateFormatted = _formatDateTime(data['acceptedAt'] ?? data['createdAt']);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: FoodMelaaColors.borderGrey, borderRadius: BorderRadius.circular(4)))),
-            const SizedBox(height: 16),
-            Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.receipt_long_rounded, color: FoodMelaaColors.riderPrimary, size: 20)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Receipt #$orderId', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)), Text(dateFormatted, style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textSecondary))]))]),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: FoodMelaaColors.riderPrimaryLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: FoodMelaaColors.riderPrimary.withValues(alpha: 0.15))),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('RIDER PAYOUT', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: FoodMelaaColors.riderPrimary, letterSpacing: 0.6)), Text('+ ₹40.00', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: FoodMelaaColors.riderPrimary))]), const Icon(Icons.account_balance_wallet_rounded, color: FoodMelaaColors.riderPrimary, size: 28)]),
-            ),
-            const SizedBox(height: 16),
-            _receiptRow('Customer', customerName),
-            _receiptRow('Phone', maskPhone(customerPhone)),
-            _receiptRow('Address', address),
-            _receiptRow('Items', itemsSummary),
-            _receiptRow('Total Paid', '₹${totalAmount.toInt()} (online)'),
-            _receiptRow('Date', dateFormatted),
-            const SizedBox(height: 20),
-            SizedBox(width: double.infinity, height: 48, child: ElevatedButton(onPressed: () => Navigator.pop(context), style: ElevatedButton.styleFrom(backgroundColor: FoodMelaaColors.riderPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: Text('Close', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _receiptRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(width: 90, child: Text(label, style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary))), Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark)))]),
-    );
-  }
+  
 
   // ── CANCELLED TAB ──────────────────────────────────────────────────────
   Widget _buildCancelledTab(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> cancelledDocs) {
@@ -1241,67 +1136,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: cancelledDocs.length,
-      itemBuilder: (context, index) => _buildCancelledCard(context, cancelledDocs[index].data(), cancelledDocs[index].id),
+      itemBuilder: (context, index) => _buildCancelledCard(context, cancelledDocs[index].data(), cancelledDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: 0.1, curve: Curves.easeOutCubic),
     );
   }
 
   Widget _buildCancelledCard(BuildContext context, Map<String, dynamic> data, String docId) {
-    final orderId = data['orderId'] as String? ?? docId;
-    final customerName = data['customerName'] as String? ?? 'Customer';
-    final customerPhone = data['customerPhone'] as String? ?? 'N/A';
-    final address = data['address'] as String? ?? 'Address not provided';
-    final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
-    final itemsSummary = data['itemsSummary'] as String? ?? _buildItemsSummary(data['items']);
-    final status = data['status'] as String? ?? 'Cancelled';
-    final cancelledAt = data['cancelledAt'] ?? data['updatedAt'] ?? data['createdAt'];
-    final dateFormatted = _formatDateTime(cancelledAt);
-    final catKey = data['orderCategory'] as String? ?? 'general';
-    final catColor = FoodMelaaColors.categoryColor(catKey);
-    final reason = status.contains('Customer') ? 'Cancelled by Customer' : status.contains('Admin') ? 'Cancelled by Admin' : status.contains('Store') ? 'Cancelled by Store' : 'Cancelled';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: FoodMelaaColors.error.withValues(alpha: 0.15)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))]),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(color: Color(0xFFFEF2F2), borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-            child: Row(children: [
-              Expanded(child: Text('Order #$orderId', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark))),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)), child: Text('${_catIcon(catKey)} ${_catLabel(catKey)}', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: catColor))),
-              const SizedBox(width: 8),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: FoodMelaaColors.error, borderRadius: BorderRadius.circular(8)), child: Text('CANCELLED', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _infoRow(Icons.person_rounded, 'Customer', '$customerName • ${maskPhone(customerPhone)}', const Color(0xFF2563EB)),
-                const SizedBox(height: 8),
-                _infoRow(Icons.location_on_rounded, 'Address', address, const Color(0xFFDC2626)),
-                const SizedBox(height: 8),
-                _infoRow(Icons.shopping_bag_rounded, 'Items', itemsSummary.isNotEmpty ? itemsSummary : 'See details', const Color(0xFFD97706)),
-                const SizedBox(height: 8),
-                _infoRow(Icons.payments_rounded, 'Amount', '₹${totalAmount.toInt()} • No earning', const Color(0xFF64748B)),
-                const SizedBox(height: 8),
-                _infoRow(Icons.cancel_rounded, 'Reason', reason, FoodMelaaColors.error),
-                const SizedBox(height: 8),
-                _infoRow(Icons.access_time_rounded, 'Cancelled', dateFormatted, const Color(0xFF64748B)),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: FoodMelaaColors.error.withValues(alpha: 0.15))),
-                  child: Row(children: [const Icon(Icons.info_outline_rounded, size: 14, color: FoodMelaaColors.error), const SizedBox(width: 6), Expanded(child: Text('This order was cancelled — no delivery required', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.error)))]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return RiderOrderCard(
+      data: data,
+      docId: docId,
+      riderId: _riderId,
+      isActiveDelivery: false,
     );
   }
 
@@ -1313,172 +1157,52 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final address = data['address'] as String? ?? 'Address not provided';
     final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
     final itemsSummary = data['itemsSummary'] as String? ?? _buildItemsSummary(data['items']);
-    // Customer's live GPS pin (saved by customer app at order time)
     final deliveryLat = (data['deliveryLat'] as num?)?.toDouble();
     final deliveryLng = (data['deliveryLng'] as num?)?.toDouble();
-    final items = data['items'] as List? ?? [];
-    final itemCount = items.isNotEmpty ? items.length : (itemsSummary.isEmpty ? 0 : itemsSummary.split(',').length);
-    final isAccepting = _acceptingOrderIds.contains(orderId);
 
-    // ── Real category from Firestore ───────────────────────────────────
-    final catKey = data['orderCategory'] as String? ?? 'general';
-    final catLabel = data['orderCategoryLabel'] as String? ?? _catLabel(catKey);
-    final catColor = FoodMelaaColors.categoryColor(catKey);
-    final catIcon = _catIcon(catKey);
-
-    int stage = 0;
-    final rawStage = data['stage'];
-    if (rawStage is num) {
-      stage = rawStage.toInt();
-    } else if (rawStage is String) {
-      stage = int.tryParse(rawStage) ?? 0;
-    }
-
-    final stageColor = stage == 0 ? FoodMelaaColors.riderPrimary : stage == 1 ? const Color(0xFFD97706) : stage == 2 ? const Color(0xFF059669) : const Color(0xFF7C3AED);
-    final stageText = stage == 0 ? 'New Order' : stage == 1 ? 'Accepted' : stage == 2 ? 'Out for Delivery' : 'Delivered';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isActiveDelivery ? FoodMelaaColors.riderPrimary.withValues(alpha: 0.2) : FoodMelaaColors.borderLight),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 16, offset: const Offset(0, 4)), BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 32, offset: const Offset(0, 12))],
+    return RiderOrderCard(
+      data: data,
+      docId: docId,
+      riderId: _riderId,
+      isActiveDelivery: isActiveDelivery,
+      isAccepting: _acceptingOrderIds.contains(orderId),
+      onAccept: () => _acceptOrder(
+        orderId,
+        customerName,
+        customerPhone,
+        address,
+        itemsSummary,
+        totalAmount,
+        deliveryLat: deliveryLat,
+        deliveryLng: deliveryLng,
       ),
-      child: Column(
-        children: [
-          // ── Category badge — MOST PROMINENT ──────────────────────────
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: catColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(8)), child: Text(catIcon, style: const TextStyle(fontSize: 16))),
-                const SizedBox(width: 10),
-                Text('$catLabel ORDER', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.8)),
-                const Spacer(),
-                Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)), child: Text('Order #$orderId', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: catColor))),
-              ],
+      onReject: () => _rejectOrder(orderId),
+      onOpenActiveDelivery: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ActiveDeliveryScreen(
+              orderId: orderId,
+              customerName: customerName,
+              customerPhone: customerPhone,
+              address: address,
+              itemsSummary: itemsSummary,
+              totalAmount: totalAmount,
+              deliveryLat: deliveryLat,
+              deliveryLng: deliveryLng,
+              riderId: _riderId,
             ),
           ),
-
-          // ── Status row ───────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(color: stageColor.withValues(alpha: 0.06)),
-            child: Row(
-              children: [
-                Container(width: 8, height: 8, decoration: BoxDecoration(color: stageColor, shape: BoxShape.circle, boxShadow: [BoxShadow(color: stageColor.withValues(alpha: 0.4), blurRadius: 6, spreadRadius: 1)])),
-                const SizedBox(width: 8),
-                Text(stageText, style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: stageColor)),
-                const Spacer(),
-                if (!isActiveDelivery) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(8)), child: Text('+ ₹40 Earning', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
-                if (isActiveDelivery) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: stageColor, borderRadius: BorderRadius.circular(8)), child: Text(stageText.toUpperCase(), style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
-              ],
-            ),
-          ),
-
-          // ── Body ─────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _infoRow(Icons.person_rounded, 'Customer', '$customerName  •  ${maskPhone(customerPhone)}', const Color(0xFF2563EB)),
-                const SizedBox(height: 10),
-                _infoRow(Icons.location_on_rounded, 'Deliver To', deliveryLat != null && deliveryLng != null ? '$address  •  📍 LIVE GPS' : address, const Color(0xFFDC2626)),
-                const SizedBox(height: 10),
-                _infoRow(Icons.shopping_bag_rounded, 'Items', itemsSummary.isNotEmpty ? itemsSummary : 'See details', const Color(0xFFD97706), trailing: itemCount > 0 ? Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: FoodMelaaColors.background, borderRadius: BorderRadius.circular(8), border: Border.all(color: FoodMelaaColors.borderGrey)), child: Text('$itemCount items', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark))) : null),
-                const SizedBox(height: 10),
-                _infoRow(Icons.payments_rounded, 'Amount', '₹${totalAmount.toInt()}  •  Paid Online', const Color(0xFF059669)),
-                const SizedBox(height: 10),
-                _infoRow(Icons.access_time_rounded, 'Placed', _formatDateTime(data['createdAt']), const Color(0xFF64748B)),
-                if (data['specialInstructions'] != null && (data['specialInstructions'] as String).trim().isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _infoRow(Icons.note_alt_rounded, 'Instructions', data['specialInstructions'] as String, const Color(0xFF7C3AED)),
-                ],
-              ],
-            ),
-          ),
-
-          // ── Actions ──────────────────────────────────────────────────
-          if (!isActiveDelivery) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(
-                children: [
-                  // REJECT — before acceptance only
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: OutlinedButton.icon(
-                        onPressed: isAccepting ? null : () => _rejectOrder(orderId),
-                        icon: const Icon(Icons.close_rounded, size: 16, color: FoodMelaaColors.textSecondary),
-                        label: Text('Reject', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary)),
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: FoodMelaaColors.borderGrey, width: 1.2), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), backgroundColor: Colors.white),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // ACCEPT — with loading + race-condition safe
-                  Expanded(
-                    flex: 2,
-                    child: SizedBox(
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: isAccepting ? null : () => _acceptOrder(orderId, customerName, customerPhone, address, itemsSummary, totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng),
-                        icon: isAccepting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                        label: Text(isAccepting ? 'Accepting...' : 'Accept', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
-                        style: ElevatedButton.styleFrom(backgroundColor: FoodMelaaColors.riderPrimary, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), disabledBackgroundColor: FoodMelaaColors.riderPrimary.withValues(alpha: 0.6)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ] else ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
-                  },
-                  icon: const Icon(Icons.navigation_rounded, color: Colors.white, size: 18),
-                  label: Text('View Active Delivery', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                  style: ElevatedButton.styleFrom(backgroundColor: stageColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _infoRow(IconData icon, String label, String value, Color color, {Widget? trailing}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 14, color: color)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label.toUpperCase(), style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: FoodMelaaColors.textGrey, letterSpacing: 0.5)),
-              const SizedBox(height: 2),
-              Text(value, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-        if (trailing != null) ...[const SizedBox(width: 8), trailing],
-      ],
+  
+  Widget _receiptRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(width: 90, child: Text(label, style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary))), Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textDark)))]),
     );
   }
 }

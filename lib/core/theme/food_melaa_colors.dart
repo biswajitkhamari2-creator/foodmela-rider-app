@@ -58,4 +58,24 @@ class FoodMelaaColors {
   };
 
   static Color categoryColor(String key) => categoryColors[key.toLowerCase()] ?? const Color(0xFF64748B);
+  // ── Premium Gold + Dark Theme (Order Cards) ───────────────────────
+  static const Color riderGold = Color(0xFFD4AF37);
+  static const Color riderGoldLight = Color(0xFFF3E2A9);
+  static const Color riderGoldDark = Color(0xFF997A15);
+  static const Color riderGoldSurface = Color(0xFF1E1A10);
+  static const Color riderDarkSurface = Color(0xFF141210);
+  static const Color riderDarkCard = Color(0xFF1C1815);
+  static const Color riderDarkBorder = Color(0xFF2E2822);
+  static const Color riderDarkText = Color(0xFFF5EFE8);
+  static const Color riderDarkTextSecondary = Color(0xFFB8AFA4);
+  static const List<Color> riderGoldGradient = [
+    Color(0xFFD4AF37),
+    Color(0xFFB8952E),
+    Color(0xFF997A15),
+  ];
+  static const List<Color> riderDarkGradient = [
+    Color(0xFF1E1A10),
+    Color(0xFF1C1815),
+    Color(0xFF141210),
+  ];
 }

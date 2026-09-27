@@ -252,10 +252,10 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1115),
+      backgroundColor: const Color(0xFF14100A),
       body: Stack(
         children: [
-          // Background ambient glows
+          // Background ambient gold glows
           Positioned(
             top: -100,
             right: -50,
@@ -264,7 +264,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
               height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.16),
               ),
             ).animate(onPlay: (controller) => controller.repeat(reverse: true))
              .scale(duration: const Duration(seconds: 4), begin: const Offset(1, 1), end: const Offset(1.2, 1.2))
@@ -278,7 +278,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
               height: 250,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF047857).withValues(alpha: 0.15),
+                color: const Color(0xFF8C5E00).withValues(alpha: 0.18),
               ),
             ).animate(onPlay: (controller) => controller.repeat(reverse: true))
              .scale(duration: const Duration(seconds: 5), begin: const Offset(1.2, 1.2), end: const Offset(1, 1))
@@ -303,19 +303,19 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                   ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.2),
                   const SizedBox(height: 40),
                   
-                  // Brand Header
+                  // Brand Header — golden
                   Center(
                     child: Container(
                       width: 90, height: 90,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                            colors: [Color(0xFF047857), Color(0xFF10B981)],
+                            colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
                               blurRadius: 24,
                               offset: const Offset(0, 8))
                         ],
@@ -326,7 +326,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                   const SizedBox(height: 24),
                   Center(
                     child: Text('FOOD MELA',
-                        style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFF10B981), letterSpacing: 1.5)),
+                        style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFFD4AF37), letterSpacing: 1.5)),
                   ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2).shimmer(delay: 1000.ms, duration: 1500.ms, color: Colors.white.withOpacity(0.5)),
                   Center(
                     child: Text('Delivery Partner',
@@ -392,15 +392,15 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Submit Button
+                  // Submit Button — golden
                   SizedBox(
                     width: double.infinity, height: 56,
                     child: ElevatedButton(
                       onPressed: _loading ? null : _signIn,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
+                        backgroundColor: const Color(0xFFB8860B),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        disabledBackgroundColor: const Color(0xFF10B981).withOpacity(0.5),
+                        disabledBackgroundColor: const Color(0xFFB8860B).withOpacity(0.5),
                         elevation: 0,
                       ),
                       child: _loading

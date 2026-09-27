@@ -601,42 +601,55 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
               const SizedBox(height: 12),
 
               // ── 4. AMOUNT & EARNINGS ROW ────────────────────────────────
+              // Flexible on both sides: on narrow screens the total shrinks
+              // with ellipsis instead of pushing the earning pill off-screen
+              // (the "RIGHT OVERFLOWED BY 15 PIXELS" crash).
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Order Total: ',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: FoodMelaaColors.textSecondary,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Order Total: ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: FoodMelaaColors.textSecondary,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${totalAmount.toInt()}',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: isDark ? Colors.white : FoodMelaaColors.textDark,
+                          Flexible(
+                            child: Text(
+                              '₹${totalAmount.toInt()}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: isDark ? Colors.white : FoodMelaaColors.textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF059669),
-                        borderRadius: BorderRadius.circular(8),
+                        ],
                       ),
-                      child: Text(
-                        '+ ₹40.00 Earning',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF059669),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '+ ₹40.00 Earning',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -652,8 +665,11 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                 child: Row(
                   children: [
                     if (!widget.isActiveDelivery && stage == 0) ...[
-                      // REJECT BUTTON
-                      Expanded(
+                      // REJECT BUTTON — Flexible (not Expanded): label keeps
+                      // natural width, never forces siblings off-screen.
+                      Flexible(
+                        flex: 3,
+                        fit: FlexFit.tight,
                         child: SizedBox(
                           height: 44,
                           child: OutlinedButton(
@@ -665,18 +681,22 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                                 width: 1.2,
                               ),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: EdgeInsets.zero,
                             ),
                             child: Text(
                               'Reject',
                               style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       // ACCEPT BUTTON
-                      Expanded(
-                        flex: 2,
+                      Flexible(
+                        flex: 5,
+                        fit: FlexFit.tight,
                         child: SizedBox(
                           height: 44,
                           child: ElevatedButton.icon(
@@ -688,18 +708,23 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                   )
                                 : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                            label: Text(
-                              widget.isAccepting ? 'Accepting...' : 'Accept Order',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
+                            label: Flexible(
+                              child: Text(
+                                widget.isAccepting ? 'Accepting...' : 'Accept Order',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: FoodMelaaColors.riderPrimary,
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
                             ),
                           ),
                         ),

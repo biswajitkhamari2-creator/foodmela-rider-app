@@ -247,9 +247,12 @@ class IncomingOrderCall {
     try {
       rootNav.pop();
     } catch (_) {}
+    // Let the pop transition finish before pushing — pushing while the
+    // dialog pop is still in flight trips Navigator._debugLocked.
+    await WidgetsBinding.instance.endOfFrame;
     if (success) {
       markShown(orderId);
-      nav.push(MaterialPageRoute(
+      await nav.push(MaterialPageRoute(
         builder: (_) => ActiveDeliveryScreen(
           orderId: orderId,
           customerName: data['customerName'] ?? 'Customer',
@@ -366,9 +369,16 @@ class IncomingOrderCall {
     _shownIds.remove(orderId);
     final route = _routes.remove(orderId);
     if (route == null) return;
-    try {
-      route.navigator?.removeRoute(route);
-    } catch (_) {}
+    // removeRoute during another transition (push/pop animation in flight)
+    // trips Navigator._debugLocked. Defer to end of frame so any in-flight
+    // transition completes first; skip if it already popped.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final nav = route.navigator;
+        if (nav == null || !route.isCurrent) return;
+        nav.removeRoute(route);
+      } catch (_) {}
+    });
   }
 
   /// Notification-tap payload → open the call screen (verified).

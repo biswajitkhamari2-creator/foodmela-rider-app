@@ -6,7 +6,8 @@ import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:food_track/features/calling/call_helper.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/incoming_call_listener.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
@@ -46,7 +47,7 @@ class ActiveDeliveryScreen extends StatefulWidget {
 }
 
 class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
-    with WidgetsBindingObserver {
+    with IncomingCallListener, WidgetsBindingObserver {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   // ── Incoming masked-call listening (rider side) ──
   @override
@@ -142,6 +143,10 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     _startLockCountdown();
     _listenToOrderCancellation();
     _startRiderLiveGps();
+    // Masked-call readiness: subscribe to incoming-call pushes + publish my
+    // FCM token so the customer can ring me (number stays hidden).
+    FirebaseService.subscribeToOrderCalls(widget.orderId);
+    FirebaseService.saveCallToken(orderId: widget.orderId, role: 'rider');
   }
 
   /// Rider's ACTUAL device GPS → order doc (riderLat/riderLng/riderUpdatedAt).
@@ -316,6 +321,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    FirebaseService.unsubscribeFromOrderCalls(widget.orderId);
     _orderSubscription?.cancel();
     _riderGpsSub?.cancel();
     _lockTimer?.cancel();
@@ -366,8 +372,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   /// that confirmed state. No optimistic step advance, no direct Firestore
   /// stage write (backend mirrors to Firestore itself). On failure the stepper
   /// stays put and the rider sees an error, never a fake success.
-  Future<void> _updateStageServerAuthoritative(int step, {bool isDelivery = false}) async {
-    if (_isCancelled) return;
+  /// Returns true only when the backend confirmed the new stage.
+  Future<bool> _updateStageServerAuthoritative(int step, {bool isDelivery = false}) async {
+    if (_isCancelled) return false;
     int targetStage = 1;
     String targetLabel = '';
     if (step == 0) { targetStage = 1; targetLabel = 'Order Accepted'; }
@@ -391,27 +398,32 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
           if (serverVersion != null) 'expectedVersion': serverVersion,
         }),
       ).timeout(const Duration(seconds: 10));
-      if (!mounted) return;
+      if (!mounted) return false;
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body) as Map<String, dynamic>;
         if (body['success'] == true && body['order'] is Map) {
           final confirmed = Map<String, dynamic>.from(body['order'] as Map);
           setState(() {
             _orderData = {...?_orderData, ...confirmed};
-            if (!isDelivery) _currentStep = step.clamp(0, 3);
+            _reconcileStepFromServer(); // render ONLY server-confirmed state
           });
           // Attach live GPS to the confirmed order (map marker only — never
           // touches stage/status, which stay server-authoritative).
           try {
             final gps = await _riderGpsPatch();
             if (gps.isNotEmpty) {
-              await FirebaseFirestore.instance
-                  .collection('orders')
-                  .doc(widget.orderId)
-                  .update(gps);
+              // Resolve the REAL doc id — same fix as acceptOrder.
+              DocumentReference ref = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+              final d = await ref.get();
+              if (!d.exists) {
+                final q = await FirebaseFirestore.instance.collection('orders')
+                  .where('orderId', isEqualTo: widget.orderId).limit(1).get();
+                if (q.docs.isNotEmpty) ref = q.docs.first.reference;
+              }
+              await ref.update(gps);
             }
           } catch (_) {}
-          return; // confirmed — backend already mirrored to Firestore
+          return true; // confirmed — backend already mirrored to Firestore
         }
       }
       // 409 → server state wins: adopt it, never overwrite it.
@@ -425,7 +437,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
           }
         } catch (_) {}
       }
-      debugPrint('Backend update-stage failed: ${res.statusCode} ${res.body}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: FoodMelaaColors.error,
@@ -437,6 +448,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
         ));
       }
+      return false;
     } catch (e) {
       debugPrint('Backend update-stage error: $e');
       if (mounted) {
@@ -448,6 +460,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
         ));
       }
+      return false;
     }
   }
 
@@ -544,7 +557,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               // Single server-authoritative delivery write (backend mirrors to
               // Firestore). No direct Firestore stage write — avoids double-write.
-              await _updateStageServerAuthoritative(4, isDelivery: true);
+              final delivered = await _updateStageServerAuthoritative(4, isDelivery: true);
+              if (!delivered) return; // snackbar already shown — do NOT show Delivered!
               if (outerContext.mounted) {
                 showDialog(
                   context: outerContext,
@@ -628,7 +642,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               borderRadius: BorderRadius.circular(12),
               boxShadow: [BoxShadow(color: const Color(0xFF10B981).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
             ),
-            child: IconButton(icon: Icon(Icons.phone_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), tooltip: 'Call Customer', onPressed: () => CallHelper.dialCustomer(context, widget.customerPhone)),
+            child: IconButton(icon: Icon(Icons.phone_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), tooltip: 'Call Customer', onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer')),
           ),
         ],
       ),
@@ -721,8 +735,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                     children: [
                       Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.1), shape: BoxShape.circle), child: Center(child: Text(widget.customerName.isNotEmpty ? widget.customerName[0].toUpperCase() : 'C', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF10B981))))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallHelper.dialCustomer(context, widget.customerPhone), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF10B981), decoration: TextDecoration.underline, decorationColor: const Color(0xFF10B981))))])),
-                      Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)]), shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallHelper.dialCustomer(context, widget.customerPhone))),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF10B981), decoration: TextDecoration.underline, decorationColor: const Color(0xFF10B981))))])),
+                      Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)]), shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'))),
                     ],
                   ),
                   const SizedBox(height: 14),

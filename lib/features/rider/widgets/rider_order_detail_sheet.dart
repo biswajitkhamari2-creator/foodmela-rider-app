@@ -683,8 +683,16 @@ class RiderOrderDetailSheet extends StatelessWidget {
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () {
+                              // Pop the sheet first, then run the callback AFTER
+                              // the pop transition releases the Navigator lock.
+                              // Calling onReject synchronously here used to trip
+                              // Navigator._debugLocked when the callback itself
+                              // navigates (accept path: loader dialog + push).
+                              final cb = onReject;
                               Navigator.pop(context);
-                              onReject?.call();
+                              if (cb != null) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) => cb());
+                              }
                             },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: FoodMelaaColors.textSecondary,
@@ -703,8 +711,15 @@ class RiderOrderDetailSheet extends StatelessWidget {
                           flex: 2,
                           child: ElevatedButton.icon(
                             onPressed: () {
+                              // Same deferred-callback fix as Reject above:
+                              // _acceptOrder shows a loader dialog + pushes
+                              // ActiveDeliveryScreen — both must wait until
+                              // this sheet's pop transition completes.
+                              final cb = onAccept;
                               Navigator.pop(context);
-                              onAccept?.call();
+                              if (cb != null) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) => cb());
+                              }
                             },
                             icon: const Icon(Icons.check_circle_rounded, size: 20, color: Colors.white),
                             label: Text(
@@ -723,8 +738,13 @@ class RiderOrderDetailSheet extends StatelessWidget {
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: () {
+                              // Deferred like Accept/Reject: the dashboard push
+                              // must wait for the sheet pop to unlock.
+                              final cb = onOpenActiveDelivery;
                               Navigator.pop(context);
-                              onOpenActiveDelivery?.call();
+                              if (cb != null) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) => cb());
+                              }
                             },
                             icon: const Icon(Icons.navigation_rounded, size: 20, color: Colors.white),
                             label: Text(

@@ -302,7 +302,9 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                             ],
                           ),
                         ),
-                        // One-Tap VoIP Call Button
+                        // In-app VoIP call — the ONLY calling option.
+                        // Normal phone dialer removed per requirement: no
+                        // tel: links, no second button, number stays masked.
                         Container(
                           height: 36,
                           width: 36,
@@ -313,7 +315,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                           child: IconButton(
                             padding: EdgeInsets.zero,
                             icon: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF10B981), size: 18),
-                            tooltip: 'In-App Call Customer',
+                            tooltip: 'Call Customer (in-app)',
                             onPressed: () {
                               CallLauncher.placeCall(
                                 context: context,
@@ -325,29 +327,6 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                             },
                           ),
                         ),
-                        if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
-                          const SizedBox(width: 8),
-                          // Phone dialer
-                          Container(
-                            height: 36,
-                            width: 36,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(Icons.dialer_sip_rounded, color: Color(0xFF3B82F6), size: 18),
-                              tooltip: 'Phone Call',
-                              onPressed: () async {
-                                final uri = Uri.parse('tel:$rawPhone');
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
                       ],
                     ),
 

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
-import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/call_helper.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 
 class RiderOrderDetailSheet extends StatelessWidget {
@@ -260,27 +260,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               ],
                             ),
                           ),
-                          // VoIP Call Button
-                          Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF10B981), size: 20),
-                              tooltip: 'In-App VoIP Call',
-                              onPressed: () {
-                                CallLauncher.placeCall(
-                                  context: context,
-                                  orderId: orderId,
-                                  myId: riderId,
-                                  myRole: 'rider',
-                                  peerLabel: 'FoodMela Customer',
-                                );
-                              },
-                            ),
-                          ),
-                          if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
+if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
                             const SizedBox(width: 8),
                             // Direct Phone Dialer Fallback
                             Container(

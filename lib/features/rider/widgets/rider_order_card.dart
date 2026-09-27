@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
-import 'package:food_track/features/calling/call_launcher.dart';
+import 'package:food_track/features/calling/call_helper.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 import 'package:food_track/features/rider/widgets/rider_order_detail_sheet.dart';
 
@@ -288,13 +288,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                             icon: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF10B981), size: 18),
                             tooltip: 'In-App Call Customer',
                             onPressed: () {
-                              CallLauncher.placeCall(
-                                context: context,
-                                orderId: orderId,
-                                myId: widget.riderId,
-                                myRole: 'rider',
-                                peerLabel: 'FoodMela Customer',
-                              );
+                              CallHelper.dialCustomer(context, rawPhone);
                             },
                           ),
                         ),

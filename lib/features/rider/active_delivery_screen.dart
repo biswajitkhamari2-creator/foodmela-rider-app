@@ -6,8 +6,7 @@ import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:food_track/features/calling/call_launcher.dart';
-import 'package:food_track/features/calling/incoming_call_listener.dart';
+import 'package:food_track/features/calling/call_helper.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
@@ -47,7 +46,7 @@ class ActiveDeliveryScreen extends StatefulWidget {
 }
 
 class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
-    with IncomingCallListener, WidgetsBindingObserver {
+    with WidgetsBindingObserver {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   // ── Incoming masked-call listening (rider side) ──
   @override
@@ -143,10 +142,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     _startLockCountdown();
     _listenToOrderCancellation();
     _startRiderLiveGps();
-    // Masked-call readiness: subscribe to incoming-call pushes + publish my
-    // FCM token so the customer can ring me (number stays hidden).
-    FirebaseService.subscribeToOrderCalls(widget.orderId);
-    FirebaseService.saveCallToken(orderId: widget.orderId, role: 'rider');
   }
 
   /// Rider's ACTUAL device GPS → order doc (riderLat/riderLng/riderUpdatedAt).
@@ -321,7 +316,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    FirebaseService.unsubscribeFromOrderCalls(widget.orderId);
     _orderSubscription?.cancel();
     _riderGpsSub?.cancel();
     _lockTimer?.cancel();
@@ -634,7 +628,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               borderRadius: BorderRadius.circular(12),
               boxShadow: [BoxShadow(color: const Color(0xFF10B981).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
             ),
-            child: IconButton(icon: Icon(Icons.phone_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), tooltip: 'Call Customer', onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer')),
+            child: IconButton(icon: Icon(Icons.phone_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), tooltip: 'Call Customer', onPressed: () => CallHelper.dialCustomer(context, widget.customerPhone)),
           ),
         ],
       ),
@@ -727,8 +721,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                     children: [
                       Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.1), shape: BoxShape.circle), child: Center(child: Text(widget.customerName.isNotEmpty ? widget.customerName[0].toUpperCase() : 'C', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF10B981))))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF10B981), decoration: TextDecoration.underline, decorationColor: const Color(0xFF10B981))))])),
-                      Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)]), shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'))),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallHelper.dialCustomer(context, widget.customerPhone), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF10B981), decoration: TextDecoration.underline, decorationColor: const Color(0xFF10B981))))])),
+                      Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF047857), Color(0xFF10B981)]), shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallHelper.dialCustomer(context, widget.customerPhone))),
                     ],
                   ),
                   const SizedBox(height: 14),

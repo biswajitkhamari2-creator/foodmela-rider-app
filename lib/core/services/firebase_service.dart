@@ -299,11 +299,7 @@ class FirebaseService {
         final payload = details.payload ?? '';
         if (payload.isNotEmpty) {
           try {
-            if (payload.contains('incoming_call')) {
-              onVoiceCallTap?.call(_strMap(payload));
-            } else {
-              onNotificationTap?.call(payload);
-            }
+            onNotificationTap?.call(payload);
           } catch (e) {
             debugPrint('⚠️ notification-tap hook notice: $e');
           }
@@ -873,59 +869,6 @@ class FirebaseService {
     } catch (e) {
       debugPrint('Error unsubscribing from rider_notifications topic: $e');
     }
-  }
-
-  // ── Masked-call push hooks ───────────────────────────────────────────────────
-  /// Subscribe to per-order call topic so incoming-call pushes arrive even
-  /// when the app is in background. Call when entering an active order screen.
-  static Future<void> subscribeToOrderCalls(String orderId) async {
-    if (orderId.isEmpty) return;
-    try {
-      await FirebaseMessaging.instance.subscribeToTopic('calls_$orderId');
-      debugPrint('✅ Subscribed to call topic: calls_$orderId');
-    } catch (e) {
-      debugPrint('call topic subscribe notice: $e');
-    }
-  }
-
-  static Future<void> unsubscribeFromOrderCalls(String orderId) async {
-    if (orderId.isEmpty) return;
-    try {
-      await FirebaseMessaging.instance.unsubscribeFromTopic('calls_$orderId');
-    } catch (e) {
-      debugPrint('call topic unsubscribe notice: $e');
-    }
-  }
-
-  /// Save this device's FCM token on the order doc so the other party can
-  /// push an incoming-call alert directly. Role is 'customer' or 'rider'.
-  static Future<void> saveCallToken({
-    required String orderId,
-    required String role,
-  }) async {
-    try {
-      final token = await FirebaseMessaging.instance
-          .getToken()
-          .timeout(const Duration(seconds: 4));
-      if (token == null || token.isEmpty) return;
-      await FirebaseFirestore.instance.collection('orders').doc(orderId).update({
-        role == 'rider' ? 'riderFcmToken' : 'customerFcmToken': token,
-      });
-      debugPrint('✅ call token saved for $role on $orderId');
-    } catch (e) {
-      debugPrint('call token save notice: $e');
-    }
-  }
-
-  /// Incoming-call push now goes via CallService → backend /api/calls/:id/ring
-  /// (dead foodmela-notify service removed). Kept as no-op for callers.
-  static void sendIncomingCallPush({
-    required String orderId,
-    required String callId,
-    required String callerRole,
-    String? receiverToken,
-  }) {
-    debugPrint('ℹ️ sendIncomingCallPush deprecated — CallService handles /ring directly');
   }
 
   // ── Notify Driver via Local Push ─────────────────────────────────────────────

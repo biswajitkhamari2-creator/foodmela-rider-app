@@ -11,10 +11,6 @@ import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
 import 'package:food_track/core/services/order_ringtone_service.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
-import 'package:food_track/features/calling/call_launcher.dart';
-import 'package:food_track/features/calling/call_models.dart';
-import 'package:food_track/features/calling/call_service.dart';
-import 'package:food_track/features/calling/incoming_call_screen.dart';
 import 'package:food_track/features/rider/active_delivery_screen.dart';
 import 'package:food_track/features/rider/rider_wallet_screen.dart';
 import 'package:food_track/features/rider/incoming_order_screen.dart';
@@ -83,11 +79,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
   bool _isOnline = true;
-  // ── Global incoming-call listening (rider side) ──────────────────────────
-  // Dashboard watches MY active deliveries for ringing invites, so the call
-  // rings even when ActiveDeliveryScreen isn't open. One sub per order.
-  final Map<String, StreamSubscription<List<CallInvite>>> _callSubs = {};
-  final Set<String> _shownCallIds = {};
 
   String get _riderName => widget.riderData?['name'] as String? ?? 'Delivery Partner';
   String get _riderPartnerId => widget.riderData?['partnerId'] as String? ?? '';
@@ -176,74 +167,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ordersSub?.cancel();
-    for (final s in _callSubs.values) {
-      s.cancel();
-    }
-    _callSubs.clear();
     OrderRingtoneService.stopAll();
     super.dispose();
-  }
-
-  /// Watch my active deliveries for incoming customer calls.
-  /// Called on every orders snapshot — adds subs for new actives, drops finished.
-  void _syncCallListening(List<QueryDocumentSnapshot<Map<String, dynamic>>> activeDocs) {
-    final myActives = <String>{};
-    for (final doc in activeDocs) {
-      final data = doc.data();
-      final orderId = data['orderId'] as String? ?? doc.id;
-      final riderId = data['riderId'] as String?;
-      if (riderId == _riderId) myActives.add(orderId);
-    }
-    // Drop subs for orders no longer mine
-    for (final id in _callSubs.keys.toList()) {
-      if (!myActives.contains(id)) {
-        _callSubs.remove(id)?.cancel();
-      }
-    }
-    // Add subs for new actives
-    for (final orderId in myActives) {
-      if (_callSubs.containsKey(orderId)) continue;
-      _callSubs[orderId] = CallService.instance
-          .incomingCallStream(orderId: orderId, myId: _riderId)
-          .listen((invites) => _onCallInvites(orderId, invites));
-    }
-  }
-
-  void _onCallInvites(String orderId, List<CallInvite> invites) {
-    if (!mounted || !_isOnline) return;
-    final fresh = invites.where((i) =>
-        i.status == CallStatus.ringing &&
-        !_shownCallIds.contains(i.callId) &&
-        DateTime.now().difference(i.createdAt).inSeconds < 60);
-    for (final invite in fresh) {
-      _shownCallIds.add(invite.callId);
-      OrderRingtoneService.startRinging('call_$orderId');
-      if (!mounted) return;
-      Navigator.of(context)
-          .push(MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => IncomingCallScreen(
-          orderId: invite.orderId,
-          callerLabel: invite.callerLabel,
-          onAccept: () {
-            Navigator.of(context).pop();
-            OrderRingtoneService.stopRinging('call_$orderId');
-            CallLauncher.answerCall(
-              context: context,
-              invite: invite,
-              myId: _riderId,
-              myRole: 'rider',
-            );
-          },
-          onDecline: () {
-            Navigator.of(context).pop();
-            OrderRingtoneService.stopRinging('call_$orderId');
-            CallLauncher.declineCall(invite);
-          },
-        ),
-      ))
-          .then((_) => OrderRingtoneService.stopRinging('call_$orderId'));
-    }
   }
 
   Future<void> _attachOrdersListenerWithRetry() async {
@@ -872,7 +797,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             }).toList();
             // ── Global incoming-call watch: ring even if delivery screen closed ──
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _syncCallListening(activeDocs);
+
             });
             final completedDocs = uniqueDocs.where((doc) {
               final d = doc.data();

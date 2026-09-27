@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
-import 'package:food_track/features/calling/call_helper.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 
 class RiderOrderDetailSheet extends StatelessWidget {
@@ -204,6 +204,30 @@ class RiderOrderDetailSheet extends StatelessWidget {
                     _buildStatusProgress(stage, isDark),
                     const SizedBox(height: 18),
 
+                    // ── Order Meta (ID / date-time / payment status / status)
+                    _buildSectionHeader('ORDER INFORMATION', Icons.receipt_long_rounded),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E222B) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        children: [
+                          _metaRow('Order ID', '#$orderId', isDark),
+                          const SizedBox(height: 8),
+                          _metaRow('Order Date & Time', _fullDateTime(orderData['createdAt'] ?? orderData['placedAt']), isDark),
+                          const SizedBox(height: 8),
+                          _metaRow('Payment Status', isPrepaid ? 'PAID ONLINE' : 'PENDING (COD)', isDark),
+                          const SizedBox(height: 8),
+                          _metaRow('Current Status', (orderData['status'] as String? ?? 'Order Placed').toString(), isDark),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
                     // ── Customer Details Tile ───────────────────────────────
                     _buildSectionHeader('CUSTOMER DETAILS', Icons.person_rounded),
                     const SizedBox(height: 8),
@@ -260,7 +284,27 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               ],
                             ),
                           ),
-if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
+                          // VoIP Call Button
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF10B981), size: 20),
+                              tooltip: 'In-App VoIP Call',
+                              onPressed: () {
+                                CallLauncher.placeCall(
+                                  context: context,
+                                  orderId: orderId,
+                                  myId: riderId,
+                                  myRole: 'rider',
+                                  peerLabel: 'FoodMela Customer',
+                                );
+                              },
+                            ),
+                          ),
+                          if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
                             const SizedBox(width: 8),
                             // Direct Phone Dialer Fallback
                             Container(
@@ -719,6 +763,54 @@ if (rawPhone.isNotEmpty && rawPhone != 'N/A') ...[
           ),
         );
       },
+    );
+  }
+
+  /// Full date-time for the ORDER INFORMATION block (e.g. 27 Sep 2026, 4:30 PM).
+  /// Falls back to the relative label when the raw value is missing/unparseable.
+  static String _fullDateTime(dynamic raw) {
+    try {
+      DateTime? dt;
+      if (raw is DateTime) {
+        dt = raw;
+      } else if (raw is String && raw.trim().isNotEmpty) {
+        dt = DateTime.tryParse(raw.trim())?.toLocal();
+      } else if (raw is num) {
+        dt = DateTime.fromMillisecondsSinceEpoch(raw.toInt()).toLocal();
+      }
+      if (dt == null) return RiderOrderModel.formatTimestamp(raw);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+      final minute = dt.minute.toString().padLeft(2, '0');
+      final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+      return '${dt.day} ${months[(dt.month - 1).clamp(0, 11)]} ${dt.year}, $hour:$minute $ampm';
+    } catch (_) {
+      return RiderOrderModel.formatTimestamp(raw);
+    }
+  }
+
+  Widget _metaRow(String label, String value, bool isDark) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 130,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 12, color: FoodMelaaColors.textSecondary),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : FoodMelaaColors.textDark,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

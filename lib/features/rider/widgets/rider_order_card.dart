@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
-import 'package:food_track/features/calling/call_helper.dart';
+import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 import 'package:food_track/features/rider/widgets/rider_order_detail_sheet.dart';
 
@@ -137,87 +137,114 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                     ),
                   ),
                 ),
-                child: Row(
+                // Two-row header: never squeezes text into vertical strips.
+                // Row 1: order ID (flexible) + status badge (fixed).
+                // Row 2: category tag + placed time.
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Category Tag
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: catColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: catColor.withValues(alpha: 0.3)),
-                      ),
-                      child: Text(
-                        catLabel,
-                        style: GoogleFonts.poppins(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: catColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Order ID
-                    Text(
-                      '#${orderId.length > 8 ? orderId.substring(orderId.length - 8) : orderId}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : FoodMelaaColors.textDark,
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    // Placed Time
                     Row(
                       children: [
-                        const Icon(Icons.access_time_rounded, size: 13, color: FoodMelaaColors.textGrey),
-                        const SizedBox(width: 4),
-                        Text(
-                          placedTimeStr,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: FoodMelaaColors.textSecondary,
+                        // Order ID — FULL official number, wraps instead of
+                        // truncating. Expanded is the ONLY flexible child here
+                        // so nothing else gets crushed to zero width.
+                        Expanded(
+                          child: Text(
+                            '#$orderId',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : FoodMelaaColors.textDark,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Status Badge — Flexible with ellipsis so long labels
+                        // (e.g. OUT FOR DELIVERY) shrink gracefully, never push
+                        // siblings off-screen or render letter-by-letter.
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: stageColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: stageColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: stageColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    stageText.toUpperCase(),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: stageColor,
+                                      letterSpacing: 0.4,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(width: 8),
-
-                    // Status Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: stageColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: stageColor.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        // Category Tag
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: stageColor,
-                              shape: BoxShape.circle,
+                              color: catColor.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: catColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              catLabel,
+                              style: GoogleFonts.poppins(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: catColor,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 5),
-                          Text(
-                            stageText.toUpperCase(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: stageColor,
-                              letterSpacing: 0.4,
+                        ),
+                        const SizedBox(width: 8),
+                        // Placed Time
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.access_time_rounded, size: 13, color: FoodMelaaColors.textGrey),
+                            const SizedBox(width: 4),
+                            Text(
+                              placedTimeStr,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: FoodMelaaColors.textSecondary,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -288,7 +315,13 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                             icon: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF10B981), size: 18),
                             tooltip: 'In-App Call Customer',
                             onPressed: () {
-                              CallHelper.dialCustomer(context, rawPhone);
+                              CallLauncher.placeCall(
+                                context: context,
+                                orderId: orderId,
+                                myId: widget.riderId,
+                                myRole: 'rider',
+                                peerLabel: 'FoodMela Customer',
+                              );
                             },
                           ),
                         ),

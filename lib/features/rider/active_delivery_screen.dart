@@ -65,7 +65,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   int _currentStep = 0;
   final TextEditingController _otpController = TextEditingController();
   Map<String, dynamic>? _orderData;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _orderSubscription;
   bool _isCancelledAlertShown = false;
   // ── 2-min status lock after accept ─────────────────────────────────────
   // Prevents accidental taps right after accepting. Lock starts when this
@@ -119,15 +120,19 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     } catch (_) {}
     try {
       final headers = await RiderAuthService.apiHeaders();
-      final res = await http.get(
-        Uri.parse('https://foodmela.online/api/orders/status/${widget.orderId}'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(
+            Uri.parse(
+                'https://foodmela.online/api/orders/status/${widget.orderId}'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
         final body = jsonDecode(res.body) as Map<String, dynamic>;
         final srv = body['order'];
         if (srv is Map) {
-          setState(() => _orderData = {...?_orderData, ...Map<String, dynamic>.from(srv)});
+          setState(() =>
+              _orderData = {...?_orderData, ...Map<String, dynamic>.from(srv)});
           _reconcileStepFromServer();
         }
       }
@@ -167,24 +172,30 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             backgroundColor: FoodMelaaColors.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: Text('GPS is OFF — customer cannot see your live location. Please enable location.',
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(
+                'GPS is OFF — customer cannot see your live location. Please enable location.',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
           ));
         }
         return;
       }
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.denied)
+        perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
         debugPrint('Rider GPS permission denied — live marker off');
         setGps('off');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             backgroundColor: FoodMelaaColors.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: Text('Location permission denied — customer cannot track you. Enable in Settings.',
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(
+                'Location permission denied — customer cannot track you. Enable in Settings.',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
           ));
         }
@@ -194,13 +205,15 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       try {
         final first = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.best,
-              timeLimit: Duration(seconds: 8)),
+              accuracy: LocationAccuracy.best, timeLimit: Duration(seconds: 8)),
         ).timeout(const Duration(seconds: 10));
         _riderPos = first;
         setGps('active');
         try {
-          await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+          await FirebaseFirestore.instance
+              .collection('orders')
+              .doc(widget.orderId)
+              .update({
             'riderLat': first.latitude,
             'riderLng': first.longitude,
             'riderUpdatedAt': FieldValue.serverTimestamp(),
@@ -215,12 +228,16 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         accuracy: LocationAccuracy.best,
         distanceFilter: 10,
       );
-      _riderGpsSub = Geolocator.getPositionStream(locationSettings: settings).listen(
+      _riderGpsSub =
+          Geolocator.getPositionStream(locationSettings: settings).listen(
         (pos) async {
           _riderPos = pos;
           if (_gpsStatus != 'active') setGps('active');
           try {
-            await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+            await FirebaseFirestore.instance
+                .collection('orders')
+                .doc(widget.orderId)
+                .update({
               'riderLat': pos.latitude,
               'riderLng': pos.longitude,
               'riderUpdatedAt': FieldValue.serverTimestamp(),
@@ -241,7 +258,11 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   }
 
   void _listenToOrderCancellation() {
-    _orderSubscription = FirebaseFirestore.instance.collection('orders').doc(widget.orderId).snapshots().listen((snap) {
+    _orderSubscription = FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .snapshots()
+        .listen((snap) {
       if (snap.exists && snap.data() != null) {
         setState(() => _orderData = snap.data());
         // Server state wins: keep the stepper aligned with the authoritative stage.
@@ -282,7 +303,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         t.cancel();
         return;
       }
-      final left = _statusLockSeconds - DateTime.now().difference(base).inSeconds;
+      final left =
+          _statusLockSeconds - DateTime.now().difference(base).inSeconds;
       if (left <= 0) {
         t.cancel();
         setState(() => _lockRemaining = 0);
@@ -310,10 +332,32 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       builder: (context) => PopScope(
         canPop: false,
         child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.red, size: 28), const SizedBox(width: 10), Text('Order Cancelled! 🚨', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))]),
-          content: Text('This order has been cancelled. Please do NOT proceed with delivery. Returning to dashboard.', style: GoogleFonts.inter(fontSize: 13)),
-          actions: [ElevatedButton(onPressed: () { Navigator.pop(context); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text('OK', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)))],
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(children: [
+            const Icon(Icons.error_outline_rounded,
+                color: Colors.red, size: 28),
+            const SizedBox(width: 10),
+            Text('Order Cancelled! 🚨',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold))
+          ]),
+          content: Text(
+              'This order has been cancelled. Please do NOT proceed with delivery. Returning to dashboard.',
+              style: GoogleFonts.inter(fontSize: 13)),
+          actions: [
+            ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                child: Text('OK',
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold, color: Colors.white)))
+          ],
         ),
       ),
     );
@@ -332,7 +376,10 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
 
   void _advanceStep() {
     if (_isCancelled) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, content: Text('Order cancelled — cannot update', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: FoodMelaaColors.error,
+          content: Text('Order cancelled — cannot update',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
       return;
     }
     // 2-min lock after accept: block accidental status taps.
@@ -341,8 +388,12 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         backgroundColor: const Color(0xFFD97706),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: Text('Please wait $_lockLabel after accepting before updating status',
-            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+        content: Text(
+            'Please wait $_lockLabel after accepting before updating status',
+            style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white)),
       ));
       return;
     }
@@ -371,17 +422,30 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   /// Server-authoritative stage update with multi-backend retry and direct Firestore fallback.
   /// Flow: Primary API -> Secondary API -> Direct Firestore Update (fallback).
   /// Guarantees the rider is NEVER blocked on the road by network drops or token expiration.
-  Future<bool> _updateStageServerAuthoritative(int step, {bool isDelivery = false}) async {
+  Future<bool> _updateStageServerAuthoritative(int step,
+      {bool isDelivery = false}) async {
     if (_isCancelled) return false;
     int targetStage = 1;
     String targetLabel = '';
-    if (step == 0) { targetStage = 1; targetLabel = 'Order Accepted'; }
-    else if (step == 1) { targetStage = 1; targetLabel = 'Reached Store'; }
-    else if (step == 2) { targetStage = 2; targetLabel = 'Items Picked Up'; }
-    else if (step == 3) { targetStage = 2; targetLabel = 'Out for Delivery'; }
-    else if (step == 4) { targetStage = 3; targetLabel = 'Delivered'; }
+    if (step == 0) {
+      targetStage = 1;
+      targetLabel = 'Order Accepted';
+    } else if (step == 1) {
+      targetStage = 1;
+      targetLabel = 'Reached Store';
+    } else if (step == 2) {
+      targetStage = 2;
+      targetLabel = 'Items Picked Up';
+    } else if (step == 3) {
+      targetStage = 2;
+      targetLabel = 'Out for Delivery';
+    } else if (step == 4) {
+      targetStage = 3;
+      targetLabel = 'Delivered';
+    }
 
-    final opId = '${widget.orderId}-$targetStage-${DateTime.now().millisecondsSinceEpoch}';
+    final opId =
+        '${widget.orderId}-$targetStage-${DateTime.now().millisecondsSinceEpoch}';
     final serverVersion = (_orderData?['statusVersion'] as num?)?.toInt();
 
     // 1. Prepare Authorization headers (auto-refresh token if missing)
@@ -414,11 +478,16 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
           // Attach live GPS asynchronously
           _riderGpsPatch().then((gps) async {
             if (gps.isNotEmpty) {
-              DocumentReference ref = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+              DocumentReference ref = FirebaseFirestore.instance
+                  .collection('orders')
+                  .doc(widget.orderId);
               final d = await ref.get();
               if (!d.exists) {
-                final q = await FirebaseFirestore.instance.collection('orders')
-                  .where('orderId', isEqualTo: widget.orderId).limit(1).get();
+                final q = await FirebaseFirestore.instance
+                    .collection('orders')
+                    .where('orderId', isEqualTo: widget.orderId)
+                    .limit(1)
+                    .get();
                 if (q.docs.isNotEmpty) ref = q.docs.first.reference;
               }
               await ref.update(gps);
@@ -432,7 +501,10 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
           final body = jsonDecode(res.body) as Map<String, dynamic>;
           final srv = body['order'];
           if (srv is Map && mounted) {
-            setState(() => _orderData = {...?_orderData, ...Map<String, dynamic>.from(srv)});
+            setState(() => _orderData = {
+                  ...?_orderData,
+                  ...Map<String, dynamic>.from(srv)
+                });
             _reconcileStepFromServer();
           }
         } catch (_) {}
@@ -442,21 +514,25 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
 
     // 2. Try Primary Backend Endpoint: https://foodmela.online/api/orders/update-stage
     try {
-      final res = await http.post(
-        Uri.parse('https://foodmela.online/api/orders/update-stage'),
-        headers: headers,
-        body: reqBody,
-      ).timeout(const Duration(seconds: 6));
+      final res = await http
+          .post(
+            Uri.parse('https://foodmela.online/api/orders/update-stage'),
+            headers: headers,
+            body: reqBody,
+          )
+          .timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 401) {
         // Token expired - refresh & retry once
         await RiderAuthService.refreshFirestoreToken();
         headers = await RiderAuthService.apiHeaders();
-        final retryRes = await http.post(
-          Uri.parse('https://foodmela.online/api/orders/update-stage'),
-          headers: headers,
-          body: reqBody,
-        ).timeout(const Duration(seconds: 6));
+        final retryRes = await http
+            .post(
+              Uri.parse('https://foodmela.online/api/orders/update-stage'),
+              headers: headers,
+              body: reqBody,
+            )
+            .timeout(const Duration(seconds: 6));
         if (processHttpResponse(retryRes)) return true;
       } else {
         if (processHttpResponse(res)) return true;
@@ -468,11 +544,13 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
 
     // 3. Try Secondary Backend Endpoint: https://foodmela.online/api/orders/update-stage
     try {
-      final res = await http.post(
-        Uri.parse('https://foodmela.online/api/orders/update-stage'),
-        headers: headers,
-        body: reqBody,
-      ).timeout(const Duration(seconds: 6));
+      final res = await http
+          .post(
+            Uri.parse('https://foodmela.online/api/orders/update-stage'),
+            headers: headers,
+            body: reqBody,
+          )
+          .timeout(const Duration(seconds: 6));
 
       if (processHttpResponse(res)) return true;
       if (res.statusCode == 409) return false;
@@ -484,12 +562,17 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     // When HTTP backend API is down, slow, or returning error, update Firestore directly
     // so customer and rider stay perfectly in sync in real time.
     try {
-      debugPrint('Executing direct Firestore update fallback for stage $targetStage...');
-      DocumentReference ref = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+      debugPrint(
+          'Executing direct Firestore update fallback for stage $targetStage...');
+      DocumentReference ref =
+          FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
       final d = await ref.get();
       if (!d.exists) {
-        final q = await FirebaseFirestore.instance.collection('orders')
-          .where('orderId', isEqualTo: widget.orderId).limit(1).get();
+        final q = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('orderId', isEqualTo: widget.orderId)
+            .limit(1)
+            .get();
         if (q.docs.isNotEmpty) {
           ref = q.docs.first.reference;
         } else {
@@ -521,16 +604,21 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             'stage': targetStage,
             'status': targetLabel,
             'statusLabel': targetLabel,
-            if (isDelivery || targetStage == 3) 'deliveredAt': DateTime.now().toIso8601String(),
+            if (isDelivery || targetStage == 3)
+              'deliveredAt': DateTime.now().toIso8601String(),
           };
           _reconcileStepFromServer();
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: const Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           content: Text('Status updated: $targetLabel',
-              style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
           duration: const Duration(seconds: 2),
         ));
       }
@@ -541,7 +629,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: FoodMelaaColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           content: Text('Could not update status — check internet and retry.',
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
         ));
@@ -553,26 +642,47 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   /// Align the local stepper with the authoritative server stage.
   void _reconcileStepFromServer() {
     final s = (_orderData?['stage'] as num?)?.toInt() ?? 0;
-    final label = (_orderData?['statusLabel'] as String?) ?? (_orderData?['status'] as String? ?? '');
+    final label = (_orderData?['statusLabel'] as String?) ??
+        (_orderData?['status'] as String? ?? '');
+    final labelLower = label.toLowerCase();
     int step = 0;
-    if (s >= 2) {
-      step = (label.contains('Out for Delivery')) ? 3 : 2;
+
+    if (s == 3) {
+      // Delivered/Complete
+      step = 3;
+    } else if (s == 2) {
+      // Picked up / Out for delivery
+      if (labelLower.contains('delivery') || labelLower.contains('deliver')) {
+        step = 3;
+      } else {
+        step = 2;
+      }
     } else if (s == 1) {
-      step = (label.contains('Reached Store') || label.contains('Picked')) ? 1 : 0;
+      // Accepted / Reached store / Items picked
+      if (labelLower.contains('reached') || labelLower.contains('picked') || labelLower.contains('store')) {
+        step = 1;
+      } else {
+        step = 0;
+      }
     }
+
     if (mounted) setState(() => _currentStep = step.clamp(0, 3));
   }
 
   /// Opens the customer's LIVE GPS pin in Google Maps navigation.
   /// Falls back to an address search when the order has no GPS fix.
   Future<void> _openCustomerLocationInMaps() async {
-    final lat = widget.deliveryLat ?? (_orderData?['deliveryLat'] as num?)?.toDouble();
-    final lng = widget.deliveryLng ?? (_orderData?['deliveryLng'] as num?)?.toDouble();
+    final lat =
+        widget.deliveryLat ?? (_orderData?['deliveryLat'] as num?)?.toDouble();
+    final lng =
+        widget.deliveryLng ?? (_orderData?['deliveryLng'] as num?)?.toDouble();
     final Uri uri;
     if (lat != null && lng != null) {
-      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
     } else {
-      uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(widget.address)}');
+      uri = Uri.parse(
+          'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(widget.address)}');
     }
     try {
       if (await canLaunchUrl(uri)) {
@@ -583,7 +693,13 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       debugPrint('Maps launch: $e');
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open Maps', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.textDark, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not open Maps',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)),
+          backgroundColor: FoodMelaaColors.textDark,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
     }
   }
 
@@ -593,53 +709,119 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.vpn_key_rounded, color: Color(0xFFD4AF37), size: 18)), const SizedBox(width: 10), Text('Delivery OTP', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark))]),
+        title: Row(children: [
+          Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10)),
+              child: Icon(Icons.vpn_key_rounded,
+                  color: Color(0xFFD4AF37), size: 18)),
+          const SizedBox(width: 10),
+          Text('Delivery OTP',
+              style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _isDark ? Colors.white : FoodMelaaColors.textDark))
+        ]),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Ask customer for the 4-digit OTP in their app', style: GoogleFonts.inter(fontSize: 12, color: Colors.white54)),
+            Text('Ask customer for the 4-digit OTP in their app',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: _isDark
+                        ? Colors.white54
+                        : FoodMelaaColors.textSecondary)),
             const SizedBox(height: 14),
             TextField(
               controller: _otpController,
               keyboardType: TextInputType.number,
               maxLength: 4,
-              style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 12, color: const Color(0xFFD4AF37)),
+              cursorColor: const Color(0xFF8C5E00),
+              style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 12,
+                  color: _isDark
+                      ? const Color(0xFFD4AF37)
+                      : FoodMelaaColors.textDark),
               textAlign: TextAlign.center,
-              decoration: InputDecoration(hintText: '••••', hintStyle: GoogleFonts.poppins(letterSpacing: 12, color: FoodMelaaColors.textGrey), filled: true, fillColor: const Color(0xFFD4AF37).withValues(alpha: 0.1), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: const Color(0xFFD4AF37).withValues(alpha: 0.3))), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFD4AF37), width: 2)), counterText: ''),
+              decoration: InputDecoration(
+                  hintText: '••••',
+                  hintStyle: GoogleFonts.poppins(
+                      letterSpacing: 12, color: FoodMelaaColors.textGrey),
+                  filled: true,
+                  fillColor: const Color(0xFFD4AF37).withValues(alpha: 0.1),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                          color:
+                              const Color(0xFFD4AF37).withValues(alpha: 0.3))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide:
+                          const BorderSide(color: Color(0xFFD4AF37), width: 2)),
+                  counterText: ''),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text('Cancel', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white54))),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Cancel',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _isDark
+                          ? Colors.white54
+                          : FoodMelaaColors.textSecondary))),
           ElevatedButton(
             onPressed: () async {
               final outerContext = context;
               final enteredOtp = _otpController.text.trim();
               if (enteredOtp.length != 4) {
-                if (outerContext.mounted) ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Text('Enter 4-digit OTP', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white))));
+                if (outerContext.mounted)
+                  ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(
+                      backgroundColor: FoodMelaaColors.error,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      content: Text('Enter 4-digit OTP',
+                          style: GoogleFonts.poppins(
+                              fontSize: 12, color: Colors.white))));
                 return;
               }
               try {
                 // OTP verified ONLY against the server doc — never local files.
                 // Try direct doc lookup first, then query by orderId field.
                 String? actualOtp;
-                var doc = await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get(GetOptions(source: Source.server));
+                var doc = await FirebaseFirestore.instance
+                    .collection('orders')
+                    .doc(widget.orderId)
+                    .get(GetOptions(source: Source.server));
                 if (doc.exists) {
                   actualOtp = doc.data()?['deliveryOtp']?.toString();
                 }
                 if (actualOtp == null || actualOtp.isEmpty) {
                   // Fallback: query by orderId field (orders stored under auto-generated IDs)
-                  final q = await FirebaseFirestore.instance.collection('orders')
-                      .where('orderId', isEqualTo: widget.orderId).limit(1).get();
+                  final q = await FirebaseFirestore.instance
+                      .collection('orders')
+                      .where('orderId', isEqualTo: widget.orderId)
+                      .limit(1)
+                      .get();
                   if (q.docs.isNotEmpty) {
                     actualOtp = q.docs.first.data()['deliveryOtp']?.toString();
                   }
                 }
                 if (actualOtp == null || actualOtp.isEmpty) {
                   // Fallback: query by clientRef field
-                  final q2 = await FirebaseFirestore.instance.collection('orders')
-                      .where('clientRef', isEqualTo: widget.orderId).limit(1).get();
+                  final q2 = await FirebaseFirestore.instance
+                      .collection('orders')
+                      .where('clientRef', isEqualTo: widget.orderId)
+                      .limit(1)
+                      .get();
                   if (q2.docs.isNotEmpty) {
                     actualOtp = q2.docs.first.data()['deliveryOtp']?.toString();
                   }
@@ -649,54 +831,134 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                   actualOtp = _orderData?['deliveryOtp']?.toString();
                 }
                 if (actualOtp == null || actualOtp.isEmpty) {
-                  if (outerContext.mounted) ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Text('Could not verify OTP from server — check internet and retry', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))));
+                  if (outerContext.mounted)
+                    ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(
+                        backgroundColor: FoodMelaaColors.error,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        content: Text(
+                            'Could not verify OTP from server — check internet and retry',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white))));
                   return;
                 }
                 if (enteredOtp != actualOtp) {
-                  if (outerContext.mounted) ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Text('Invalid OTP — check customer app', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))));
+                  if (outerContext.mounted)
+                    ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(
+                        backgroundColor: FoodMelaaColors.error,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        content: Text('Invalid OTP — check customer app',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white))));
                   return;
                 }
               } catch (e) {
                 debugPrint('OTP check: $e');
                 // Last resort: try matching against local order data OTP
                 final localOtp = _orderData?['deliveryOtp']?.toString();
-                if (localOtp != null && localOtp.isNotEmpty && enteredOtp == localOtp) {
+                if (localOtp != null &&
+                    localOtp.isNotEmpty &&
+                    enteredOtp == localOtp) {
                   // OTP matches local data — proceed
                 } else {
-                  if (outerContext.mounted) ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(backgroundColor: FoodMelaaColors.error, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Text('Could not verify OTP — check internet and retry', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))));
+                  if (outerContext.mounted)
+                    ScaffoldMessenger.of(outerContext).showSnackBar(SnackBar(
+                        backgroundColor: FoodMelaaColors.error,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        content: Text(
+                            'Could not verify OTP — check internet and retry',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white))));
                   return;
                 }
               }
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               // Single server-authoritative delivery write (backend mirrors to
               // Firestore). No direct Firestore stage write — avoids double-write.
-              final delivered = await _updateStageServerAuthoritative(4, isDelivery: true);
-              if (!delivered) return; // snackbar already shown — do NOT show Delivered!
+              final delivered =
+                  await _updateStageServerAuthoritative(4, isDelivery: true);
+              if (!delivered)
+                return; // snackbar already shown — do NOT show Delivered!
               if (outerContext.mounted) {
                 showDialog(
                   context: outerContext,
                   barrierDismissible: false,
                   builder: (thankYouCtx) => AlertDialog(
-                    backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    backgroundColor:
+                        _isDark ? const Color(0xFF1C1813) : Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.check_circle_rounded, color: Color(0xFFD4AF37), size: 48)),
+                        Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFD4AF37)
+                                    .withValues(alpha: 0.1),
+                                shape: BoxShape.circle),
+                            child: const Icon(Icons.check_circle_rounded,
+                                color: Color(0xFFD4AF37), size: 48)),
                         const SizedBox(height: 16),
-                        Text('Delivered!', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFFD4AF37))),
+                        Text('Delivered!',
+                            style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFFD4AF37))),
                         const SizedBox(height: 8),
-                        Text('Order #${widget.orderId} completed\n₹40 added to your earnings', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: Colors.white54, height: 1.5)),
+                        Text(
+                            'Order #${widget.orderId} completed\n₹40 added to your earnings',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: Colors.white54,
+                                height: 1.5)),
                         const SizedBox(height: 20),
-                        SizedBox(width: double.infinity, height: 48, child: ElevatedButton(onPressed: () { Navigator.pop(thankYouCtx); if (outerContext.mounted) Navigator.pop(outerContext); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: Text('Back to Dashboard', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)))),
+                        SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(thankYouCtx);
+                                  if (outerContext.mounted)
+                                    Navigator.pop(outerContext);
+                                },
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFD4AF37),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14))),
+                                child: Text('Back to Dashboard',
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white)))),
                       ],
                     ),
                   ),
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            child: Text('Verify & Complete', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            child: Text('Verify & Complete',
+                style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white)),
           ),
         ],
       ),
@@ -713,12 +975,28 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   Widget build(BuildContext context) {
     if (_isCancelled) {
       return Scaffold(
-        backgroundColor: _isDark ? const Color(0xFF12100C) : const Color(0xFFFFFBF2),
+        backgroundColor:
+            _isDark ? const Color(0xFF12100C) : const Color(0xFFFFFBF2),
         appBar: AppBar(
           backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
           elevation: 0,
-          leading: Container(margin: const EdgeInsets.all(8), decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : FoodMelaaColors.background, shape: BoxShape.circle), child: IconButton(icon: Icon(Icons.arrow_back_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), onPressed: () => Navigator.pop(context))),
-          title: Text('Order Cancelled', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFFEF4444))),
+          leading: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: _isDark
+                      ? const Color(0xFF1C1813)
+                      : FoodMelaaColors.background,
+                  shape: BoxShape.circle),
+              child: IconButton(
+                  icon: Icon(Icons.arrow_back_rounded,
+                      color: _isDark ? Colors.white : FoodMelaaColors.textDark,
+                      size: 20),
+                  onPressed: () => Navigator.pop(context))),
+          title: Text('Order Cancelled',
+              style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFFEF4444))),
         ),
         body: Center(
           child: Padding(
@@ -726,13 +1004,50 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(width: 80, height: 80, decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.1), shape: BoxShape.circle, border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.2))), child: const Icon(Icons.cancel_rounded, size: 40, color: Color(0xFFEF4444))),
+                Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: const Color(0xFFEF4444)
+                                .withValues(alpha: 0.2))),
+                    child: const Icon(Icons.cancel_rounded,
+                        size: 40, color: Color(0xFFEF4444))),
                 const SizedBox(height: 16),
-                Text('This order has been cancelled', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFFEF4444))),
+                Text('This order has been cancelled',
+                    style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFFEF4444))),
                 const SizedBox(height: 8),
-                Text('Order #${widget.orderId} was cancelled.\nNo delivery action is required.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _isDark ? Colors.white.withValues(alpha: 0.5) : FoodMelaaColors.textSecondary, height: 1.5)),
+                Text(
+                    'Order #${widget.orderId} was cancelled.\nNo delivery action is required.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: _isDark
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : FoodMelaaColors.textSecondary,
+                        height: 1.5)),
                 const SizedBox(height: 24),
-                SizedBox(width: double.infinity, height: 48, child: ElevatedButton(onPressed: () => Navigator.pop(context), style: ElevatedButton.styleFrom(backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: Text('Back to Dashboard', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)))),
+                SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: _isDark
+                                ? const Color(0xFF1C1813)
+                                : Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14))),
+                        child: Text('Back to Dashboard',
+                            style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)))),
               ],
             ),
           ),
@@ -740,22 +1055,62 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       );
     }
     return Scaffold(
-      backgroundColor: _isDark ? const Color(0xFF12100C) : const Color(0xFFFFFBF2),
+      backgroundColor:
+          _isDark ? const Color(0xFF12100C) : const Color(0xFFFFFBF2),
       appBar: AppBar(
         backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: Container(margin: const EdgeInsets.all(8), decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : FoodMelaaColors.background, shape: BoxShape.circle), child: IconButton(icon: Icon(Icons.arrow_back_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), onPressed: () => Navigator.pop(context))),
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Active Delivery', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), Text('#${widget.orderId}', style: GoogleFonts.inter(fontSize: 11, color: _isDark ? Colors.white.withValues(alpha: 0.5) : FoodMelaaColors.textSecondary))]),
+        leading: Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: _isDark
+                    ? const Color(0xFF1C1813)
+                    : FoodMelaaColors.background,
+                shape: BoxShape.circle),
+            child: IconButton(
+                icon: Icon(Icons.arrow_back_rounded,
+                    color: _isDark ? Colors.white : FoodMelaaColors.textDark,
+                    size: 20),
+                onPressed: () => Navigator.pop(context))),
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Active Delivery',
+              style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _isDark ? Colors.white : FoodMelaaColors.textDark)),
+          Text('#${widget.orderId}',
+              style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: _isDark
+                      ? Colors.white.withValues(alpha: 0.5)
+                      : FoodMelaaColors.textSecondary))
+        ]),
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 12, top: 6, bottom: 6),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
+              gradient: const LinearGradient(
+                  colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: const Color(0xFFD4AF37).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [
+                BoxShadow(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
             ),
-            child: IconButton(icon: Icon(Icons.phone_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20), tooltip: 'Call Customer', onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer')),
+            child: IconButton(
+                icon: Icon(Icons.phone_rounded,
+                    color: _isDark ? Colors.white : FoodMelaaColors.textDark,
+                    size: 20),
+                tooltip: 'Call Customer',
+                onPressed: () => CallLauncher.placeCall(
+                    context: context,
+                    orderId: widget.orderId,
+                    myId: listenMyId,
+                    myRole: 'rider',
+                    peerLabel: 'FoodMela Customer')),
           ),
         ],
       ),
@@ -768,38 +1123,92 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             // Navigation card — premium (with rider LIVE GPS readout)
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]), borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: const Color(0xFFD4AF37).withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 6))]),
+              decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6))
+                  ]),
               child: Row(
                 children: [
-                  Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.navigation_rounded, color: Colors.white, size: 22)),
+                  Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.navigation_rounded,
+                          color: Colors.white, size: 22)),
                   const SizedBox(width: 12),
                   Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(widget.address, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    Row(
-                      children: [
-                        if ((widget.deliveryLat ?? (_orderData?['deliveryLat'] as num?)?.toDouble()) != null &&
-                            (widget.deliveryLng ?? (_orderData?['deliveryLng'] as num?)?.toDouble()) != null)
-                          Container(
-                            margin: const EdgeInsets.only(right: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(color: const Color(0xFF8C5E00), borderRadius: BorderRadius.circular(6)),
-                            child: Text('📍 LIVE GPS', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
-                          ),
-                        Expanded(
-                          child: Text(
-                              _gpsStatus == 'active'
-                                  ? '🚴 Live GPS active — customer sees you move'
-                                  : _gpsStatus == 'off'
-                                      ? '⚠️ GPS OFF — customer cannot track you'
-                                      : '📡 Starting live GPS…',
-                              style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.8))),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text(widget.address,
+                            style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        Row(
+                          children: [
+                            if ((widget.deliveryLat ??
+                                        (_orderData?['deliveryLat'] as num?)
+                                            ?.toDouble()) !=
+                                    null &&
+                                (widget.deliveryLng ??
+                                        (_orderData?['deliveryLng'] as num?)
+                                            ?.toDouble()) !=
+                                    null)
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF8C5E00),
+                                    borderRadius: BorderRadius.circular(6)),
+                                child: Text('📍 LIVE GPS',
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white)),
+                              ),
+                            Expanded(
+                              child: Text(
+                                  _gpsStatus == 'active'
+                                      ? '🚴 Live GPS active — customer sees you move'
+                                      : _gpsStatus == 'off'
+                                          ? '⚠️ GPS OFF — customer cannot track you'
+                                          : '📡 Starting live GPS…',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.8))),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ])),
+                      ])),
                   const SizedBox(width: 10),
-                  ElevatedButton.icon(onPressed: _openCustomerLocationInMaps, icon: const Icon(Icons.near_me_rounded, size: 14, color: Color(0xFFB8860B)), label: Text('GPS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFB8860B))), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
+                  ElevatedButton.icon(
+                      onPressed: _openCustomerLocationInMaps,
+                      icon: const Icon(Icons.near_me_rounded,
+                          size: 14, color: Color(0xFFB8860B)),
+                      label: Text('GPS',
+                          style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFB8860B))),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)))),
                 ],
               ),
             ),
@@ -808,11 +1217,41 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             // Workflow — premium
             Container(
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: _isDark ? RiderGold.borderDark : RiderGold.goldBorder), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.05), blurRadius: 16, offset: const Offset(0, 4))]),
+              decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF1C1813) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: _isDark
+                          ? RiderGold.borderDark
+                          : RiderGold.goldBorder),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: _isDark ? 0.2 : 0.05),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4))
+                  ]),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.route_rounded, color: Color(0xFFD4AF37), size: 16)), const SizedBox(width: 10), Text('Delivery Progress', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark))]),
+                  Row(children: [
+                    Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                            color:
+                                const Color(0xFFD4AF37).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10)),
+                        child: Icon(Icons.route_rounded,
+                            color: Color(0xFFD4AF37), size: 16)),
+                    const SizedBox(width: 10),
+                    Text('Delivery Progress',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _isDark
+                                ? Colors.white
+                                : FoodMelaaColors.textDark))
+                  ]),
                   const SizedBox(height: 18),
                   for (int i = 0; i < 4; i++) ...[
                     Row(
@@ -820,15 +1259,97 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                         Container(
                           width: 32,
                           height: 32,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: i <= _currentStep ? const Color(0xFFD4AF37) : Colors.white.withValues(alpha: 0.1), boxShadow: i == _currentStep ? [BoxShadow(color: const Color(0xFFD4AF37).withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))] : null),
-                          child: Icon(i < _currentStep ? Icons.check_rounded : _stepIcons[i], size: 16, color: Colors.white),
+                          decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: i <= _currentStep
+                                  ? const Color(0xFFD4AF37)
+                                  : Colors.white.withValues(alpha: 0.1),
+                              boxShadow: i == _currentStep
+                                  ? [
+                                      BoxShadow(
+                                          color: const Color(0xFFD4AF37)
+                                              .withValues(alpha: 0.25),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3))
+                                    ]
+                                  : null),
+                          child: Icon(
+                              i < _currentStep
+                                  ? Icons.check_rounded
+                                  : _stepIcons[i],
+                              size: 16,
+                              color: Colors.white),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(child: Text(_stepTitles[i], style: GoogleFonts.poppins(fontSize: 13, fontWeight: i == _currentStep ? FontWeight.w700 : (i < _currentStep ? FontWeight.w600 : FontWeight.w500), color: i <= _currentStep ? (_isDark ? Colors.white : FoodMelaaColors.textDark) : (_isDark ? Colors.white.withValues(alpha: 0.5) : FoodMelaaColors.textSecondary)))),
-                        if (i == _currentStep) (i == 0 ? Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1), boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1, offset: const Offset(0, 3))]), child: Text('ACCEPTED', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white))).animate(onPlay: (cnt) => cnt.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.06, 1.06), duration: 1000.ms) : Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)), child: Text('NOW', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFFD4AF37))))),
+                        Expanded(
+                            child: Text(_stepTitles[i],
+                                style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: i == _currentStep
+                                        ? FontWeight.w700
+                                        : (i < _currentStep
+                                            ? FontWeight.w600
+                                            : FontWeight.w500),
+                                    color: i <= _currentStep
+                                        ? (_isDark
+                                            ? Colors.white
+                                            : FoodMelaaColors.textDark)
+                                        : (_isDark
+                                            ? Colors.white
+                                                .withValues(alpha: 0.5)
+                                            : FoodMelaaColors.textSecondary)))),
+                        if (i == _currentStep)
+                          (i == 0
+                              ? Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                              colors: [Color(0xFFF59E0B), Color(0xFFD97706)]),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.6),
+                                              width: 1),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: const Color(0xFFF59E0B)
+                                                    .withValues(alpha: 0.6),
+                                                blurRadius: 10,
+                                                spreadRadius: 1,
+                                                offset: const Offset(0, 3))
+                                          ]),
+                                      child: Text('ACCEPTED',
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white)))
+                                  .animate(
+                                      onPlay: (cnt) =>
+                                          cnt.repeat(reverse: true))
+                                  .scale(
+                                      begin: const Offset(1, 1),
+                                      end: const Offset(1.06, 1.06),
+                                      duration: 1000.ms)
+                              : Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                                  child: Text('NOW', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFFD4AF37))))),
                       ],
                     ),
-                    if (i < 3) Container(margin: const EdgeInsets.only(left: 15, top: 4, bottom: 4), width: 2, height: 18, decoration: BoxDecoration(color: i < _currentStep ? const Color(0xFFD4AF37) : Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                    if (i < 3)
+                      Container(
+                          margin: const EdgeInsets.only(
+                              left: 15, top: 4, bottom: 4),
+                          width: 2,
+                          height: 18,
+                          decoration: BoxDecoration(
+                              color: i < _currentStep
+                                  ? const Color(0xFFD4AF37)
+                                  : Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(2))),
                   ],
                 ],
               ),
@@ -838,42 +1359,142 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
             // Customer & order — premium
             Container(
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: _isDark ? RiderGold.borderDark : RiderGold.goldBorder), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.05), blurRadius: 16, offset: const Offset(0, 4))]),
+              decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF1C1813) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: _isDark
+                          ? RiderGold.borderDark
+                          : RiderGold.goldBorder),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: _isDark ? 0.2 : 0.05),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4))
+                  ]),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: RiderGold.borderDark, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.person_rounded, color: Colors.white54, size: 16)), const SizedBox(width: 10), Text('Customer & Order', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark))]),
+                  Row(children: [
+                    Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                            color: RiderGold.borderDark,
+                            borderRadius: BorderRadius.circular(10)),
+                        child: Icon(Icons.person_rounded,
+                            color: Colors.white54, size: 16)),
+                    const SizedBox(width: 10),
+                    Text('Customer & Order',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _isDark
+                                ? Colors.white
+                                : FoodMelaaColors.textDark))
+                  ]),
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), shape: BoxShape.circle), child: Center(child: Text(widget.customerName.isNotEmpty ? widget.customerName[0].toUpperCase() : 'C', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFFD4AF37))))),
+                      Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                              color: const Color(0xFFD4AF37)
+                                  .withValues(alpha: 0.1),
+                              shape: BoxShape.circle),
+                          child: Center(
+                              child: Text(
+                                  widget.customerName.isNotEmpty
+                                      ? widget.customerName[0].toUpperCase()
+                                      : 'C',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFFD4AF37))))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.customerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)), GestureDetector(onTap: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'), child: Text('📞 Call Customer (in-app)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFFD4AF37), decoration: TextDecoration.underline, decorationColor: const Color(0xFFD4AF37))))])),
-                      Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]), shape: BoxShape.circle), child: IconButton(icon: const Icon(Icons.phone_rounded, color: Colors.white, size: 18), onPressed: () => CallLauncher.placeCall(context: context, orderId: widget.orderId, myId: listenMyId, myRole: 'rider', peerLabel: 'FoodMela Customer'))),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text(widget.customerName,
+                                style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: _isDark
+                                        ? Colors.white
+                                        : FoodMelaaColors.textDark)),
+                            GestureDetector(
+                                onTap: () => CallLauncher.placeCall(
+                                    context: context,
+                                    orderId: widget.orderId,
+                                    myId: listenMyId,
+                                    myRole: 'rider',
+                                    peerLabel: 'FoodMela Customer'),
+                                child: Text('📞 Call Customer (in-app)',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFFD4AF37),
+                                        decoration: TextDecoration.underline,
+                                        decorationColor:
+                                            const Color(0xFFD4AF37))))
+                          ])),
+                      Container(
+                          decoration: const BoxDecoration(
+                              gradient: LinearGradient(colors: [
+                                Color(0xFF8C5E00),
+                                Color(0xFFD4AF37)
+                              ]),
+                              shape: BoxShape.circle),
+                          child: IconButton(
+                              icon: const Icon(Icons.phone_rounded,
+                                  color: Colors.white, size: 18),
+                              onPressed: () => CallLauncher.placeCall(
+                                  context: context,
+                                  orderId: widget.orderId,
+                                  myId: listenMyId,
+                                  myRole: 'rider',
+                                  peerLabel: 'FoodMela Customer'))),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Container(height: 1, color: _isDark ? RiderGold.borderDark : RiderGold.goldBorder),
+                  Container(
+                      height: 1,
+                      color: _isDark
+                          ? RiderGold.borderDark
+                          : RiderGold.goldBorder),
                   const SizedBox(height: 14),
-                  _detailRow(Icons.location_on_rounded, 'Delivery Address', widget.address, const Color(0xFFEF4444)),
+                  _detailRow(Icons.location_on_rounded, 'Delivery Address',
+                      widget.address, const Color(0xFFEF4444)),
                   const SizedBox(height: 12),
                   // Itemized Food Items List
                   () {
-                    final items = RiderOrderModel.parseItems(_orderData ?? {'itemsSummary': widget.itemsSummary, 'totalAmount': widget.totalAmount});
+                    final items = RiderOrderModel.parseItems(_orderData ??
+                        {
+                          'itemsSummary': widget.itemsSummary,
+                          'totalAmount': widget.totalAmount
+                        });
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8FAFC),
+                        color: _isDark
+                            ? Colors.white.withValues(alpha: 0.04)
+                            : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                        border: Border.all(
+                            color: _isDark
+                                ? Colors.white10
+                                : const Color(0xFFE2E8F0)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.lunch_dining_rounded, size: 15, color: Color(0xFFD4AF37)),
+                              const Icon(Icons.lunch_dining_rounded,
+                                  size: 15, color: Color(0xFFD4AF37)),
                               const SizedBox(width: 6),
                               Text(
                                 'ORDERED FOOD ITEMS (${items.length})',
@@ -881,7 +1502,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.5,
-                                  color: _isDark ? Colors.white70 : const Color(0xFF64748B),
+                                  color: _isDark
+                                      ? Colors.white70
+                                      : const Color(0xFF64748B),
                                 ),
                               ),
                             ],
@@ -893,9 +1516,11 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                               child: Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: FoodMelaaColors.primary.withValues(alpha: 0.15),
+                                      color: FoodMelaaColors.primary
+                                          .withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
@@ -914,7 +1539,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                       style: GoogleFonts.poppins(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w600,
-                                        color: _isDark ? Colors.white : FoodMelaaColors.textDark,
+                                        color: _isDark
+                                            ? Colors.white
+                                            : FoodMelaaColors.textDark,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -926,7 +1553,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                       style: GoogleFonts.poppins(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
-                                        color: _isDark ? Colors.white70 : const Color(0xFF334155),
+                                        color: _isDark
+                                            ? Colors.white70
+                                            : const Color(0xFF334155),
                                       ),
                                     ),
                                 ],
@@ -940,8 +1569,39 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(children: [Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)), child: Icon(Icons.payments_rounded, size: 14, color: Color(0xFFD4AF37))), const SizedBox(width: 8), Text('₹${widget.totalAmount.toInt()}', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: _isDark ? Colors.white : FoodMelaaColors.textDark))]),
-                      Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.3))), child: Text('PAID ONLINE', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFFD4AF37)))),
+                      Row(children: [
+                        Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFD4AF37)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8)),
+                            child: Icon(Icons.payments_rounded,
+                                size: 14, color: Color(0xFFD4AF37))),
+                        const SizedBox(width: 8),
+                        Text('₹${widget.totalAmount.toInt()}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _isDark
+                                    ? Colors.white
+                                    : FoodMelaaColors.textDark))
+                      ]),
+                      Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFFD4AF37)
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: const Color(0xFFD4AF37)
+                                      .withValues(alpha: 0.3))),
+                          child: Text('PAID ONLINE',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFFD4AF37)))),
                     ],
                   ),
                 ],
@@ -955,10 +1615,23 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
               height: 54,
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: _statusLocked ? null : const LinearGradient(colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
-                  color: _statusLocked ? Colors.white.withValues(alpha: 0.1) : null,
+                  gradient: _statusLocked
+                      ? null
+                      : const LinearGradient(
+                          colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
+                  color: _statusLocked
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : null,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: _statusLocked ? null : [BoxShadow(color: const Color(0xFFD4AF37).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                  boxShadow: _statusLocked
+                      ? null
+                      : [
+                          BoxShadow(
+                              color: const Color(0xFFD4AF37)
+                                  .withValues(alpha: 0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4))
+                        ],
                 ),
                 child: ElevatedButton(
                   onPressed: _advanceStep,
@@ -967,27 +1640,42 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16))),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(_statusLocked
-                          ? Icons.lock_clock_rounded
-                          : (_currentStep == 3 ? Icons.vpn_key_rounded : Icons.arrow_forward_rounded),
-                          color: _statusLocked ? Colors.white54 : Colors.white, size: 18),
+                      Icon(
+                          _statusLocked
+                              ? Icons.lock_clock_rounded
+                              : (_currentStep == 3
+                                  ? Icons.vpn_key_rounded
+                                  : Icons.arrow_forward_rounded),
+                          color: _statusLocked ? Colors.white54 : Colors.white,
+                          size: 18),
                       const SizedBox(width: 8),
                       Text(
                           _statusLocked
                               ? _lockLabel
-                              : (_currentStep == 3 ? 'Enter Customer OTP' : 'Update Status'),
-                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: _statusLocked ? Colors.white54 : Colors.white)),
+                              : (_currentStep == 3
+                                  ? 'Enter Customer OTP'
+                                  : 'Update Status'),
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: _statusLocked
+                                  ? Colors.white54
+                                  : Colors.white)),
                     ],
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            Center(child: Text('Accepted orders cannot be cancelled', style: GoogleFonts.inter(fontSize: 11, color: FoodMelaaColors.textGrey))),
+            Center(
+                child: Text('Accepted orders cannot be cancelled',
+                    style: GoogleFonts.inter(
+                        fontSize: 11, color: FoodMelaaColors.textGrey))),
           ],
         ),
       ),
@@ -998,11 +1686,33 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 14, color: color)),
+        Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, size: 14, color: color)),
         const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label.toUpperCase(), style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white54, letterSpacing: 0.5)), const SizedBox(height: 2), Text(value, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white, height: 1.4), maxLines: 3, overflow: TextOverflow.ellipsis)])),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label.toUpperCase(),
+              style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white54,
+                  letterSpacing: 0.5)),
+          const SizedBox(height: 2),
+          Text(value,
+              style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  height: 1.4),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis)
+        ])),
       ],
     );
   }
 }
-

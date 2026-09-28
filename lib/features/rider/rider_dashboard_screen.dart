@@ -357,6 +357,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     // FirebaseService prefs so restarts can't re-ring either.
     final stillPending = <String>{};
     final now = DateTime.now();
+    final ordersToClean = <String>[]; // Orders that are no longer pending but in claimed set
+
     for (final doc in snapshot.docs) {
       final data = doc.data();
       final orderId = data['orderId'] as String? ?? doc.id;
@@ -364,9 +366,17 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       final isDeleted = data['isDeleted'] as bool? ?? false;
       final riderId = data['riderId'] as String?;
       final status = (data['status'] as String? ?? '').toLowerCase();
+
+      // Clean up: if order was claimed locally but is now accepted/completed, remove from claimed set
+      if (_claimedOrderIds.contains(orderId) && stage > 0) {
+        ordersToClean.add(orderId);
+      }
+
       // Locally claimed/rejected by ME — never ring again, even before
       // the Firestore write echoes back (kills the re-ring loop).
       if (_claimedOrderIds.contains(orderId) || _rejectedOrderIds.contains(orderId)) {
+        // But if it's already confirmed accepted (stage > 0), remove from claimed
+        if (stage > 0) continue;
         continue;
       }
       final available = stage == 0 &&
@@ -407,6 +417,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         );
       }
     }
+
+    // Clean up claimed orders that are now confirmed accepted
+    if (ordersToClean.isNotEmpty) {
+      for (final id in ordersToClean) {
+        _claimedOrderIds.remove(id);
+      }
+      _saveNotifiedIds();
+      debugPrint('🧹 Cleaned ${ordersToClean.length} confirmed orders from claimed set');
+    }
+
     // Silence orders that are no longer available (accepted / cancelled /
     // claimed) — ringtone stops, call screen closes, AND the tray
     // notification vanishes. If the rider was LOOKING at the call screen,

@@ -30,13 +30,20 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // WhatsApp-style incoming call for orders & calls — wake screen, bring to front, ring continuously
   if (dataType == 'incoming_call' || dataType == 'new_order' || orderId.isNotEmpty) {
     debugPrint('📞 [RIDER BACKGROUND] Incoming order call for order $orderId');
+
+    // Settled orders must never re-trigger (prevents duplicates from FCM redelivery)
+    if (orderId.isNotEmpty && FirebaseService._settledOrderIds.contains(orderId)) {
+      debugPrint('ℹ️ [RIDER BACKGROUND] dropped redelivery for settled $orderId');
+      return;
+    }
+
     try {
       if (orderId.isNotEmpty) {
         await NativeOrderAlert.start(orderId);
         await NativeOrderAlert.bringAppToForeground();
       }
     } catch (_) {}
-    
+
     // Data-only push aata hai (server notification block nahi bhejta),
     // isliye OS strip nahi dikhata — full-screen local notification HAM dikhate hain.
     await _showCallNotification(
@@ -394,14 +401,17 @@ class FirebaseService {
           debugPrint('ℹ️ [RIDER FCM] dropped redelivery for settled $orderId');
           return;
         }
-        
-        if (orderId.isNotEmpty && (isOrderNotified(orderId) || IncomingOrderCall.isShown(orderId))) {
-          debugPrint('ℹ️ [RIDER FCM] skipped notification, order $orderId is already notified/shown');
+
+        if (orderId.isNotEmpty && IncomingOrderCall.isShown(orderId)) {
+          debugPrint('ℹ️ [RIDER FCM] skipped notification, order $orderId call screen already open');
           return;
         }
-        
-        if (orderId.isNotEmpty) {
-          markOrderNotified(orderId);
+
+        // Atomic check-and-mark: prevent race condition where two FCM messages
+        // arrive simultaneously and both pass the check before either marks as processing
+        if (orderId.isNotEmpty && !_markOrderProcessing(orderId)) {
+          debugPrint('ℹ️ [RIDER FCM] dropped duplicate for $orderId (already processing)');
+          return;
         }
         final data = message.data
             .map((k, v) => MapEntry(k, v?.toString() ?? ''));
@@ -1024,14 +1034,16 @@ class FirebaseService {
   static final Set<String> _settledOrderIds = {};
 
   static final Set<String> _globalNotifiedIds = {};
+  static final Set<String> _processingOrderIds = {};
 
   static bool isOrderNotified(String orderId) {
     if (orderId.isEmpty) return false;
-    return _globalNotifiedIds.contains(orderId);
+    return _globalNotifiedIds.contains(orderId) || _processingOrderIds.contains(orderId);
   }
 
   static Future<void> markOrderNotified(String orderId) async {
     if (orderId.isEmpty) return;
+    _processingOrderIds.remove(orderId);
     _globalNotifiedIds.add(orderId);
     if (_globalNotifiedIds.length > 200) {
       _globalNotifiedIds.remove(_globalNotifiedIds.first);
@@ -1040,6 +1052,15 @@ class FirebaseService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('global_notified_ids', _globalNotifiedIds.toList());
     } catch (_) {}
+  }
+
+  static bool _markOrderProcessing(String orderId) {
+    if (orderId.isEmpty) return false;
+    if (_processingOrderIds.contains(orderId) || _globalNotifiedIds.contains(orderId)) {
+      return false; // Already processing or processed
+    }
+    _processingOrderIds.add(orderId);
+    return true; // Mark as processing successfully
   }
 
 
@@ -1077,6 +1098,7 @@ class FirebaseService {
       _settledOrderIds.addAll(saved);
       final savedNotified = prefs.getStringList('global_notified_ids') ?? [];
       _globalNotifiedIds.addAll(savedNotified);
+      _processingOrderIds.clear(); // Never persist processing state across app restarts
     } catch (_) {}
   }
 

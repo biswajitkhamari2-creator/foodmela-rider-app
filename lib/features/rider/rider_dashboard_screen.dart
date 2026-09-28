@@ -715,8 +715,19 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         // Remember claim locally — snapshot echo delay can't re-ring this order
         _claimedOrderIds.add(orderId);
         _notifiedOrderIds.add(orderId);
+        _rejectedOrderIds.remove(orderId); // Clear rejected if was previously rejected
         _saveNotifiedIds();
-        await Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)));
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)))
+            .then((_) {
+          // When returning from delivery screen, clear claimed so if there's any issue
+          // with Firebase sync, order won't be stuck in claimed state
+          if (mounted) {
+            setState(() {
+              _claimedOrderIds.remove(orderId);
+              _saveNotifiedIds();
+            });
+          }
+        });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(backgroundColor: const Color(0xFFD97706), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), content: Row(children: [const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text('Order already taken by another rider', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))) ])),

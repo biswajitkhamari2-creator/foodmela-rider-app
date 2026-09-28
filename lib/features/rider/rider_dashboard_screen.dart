@@ -58,6 +58,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   final Set<String> _notifiedOrderIds = {};
   final Set<String> _rejectedOrderIds = {}; // Local reject — hides card until refresh
   final Set<String> _acceptingOrderIds = {}; // Prevent double-tap
+  String _searchQuery = ''; // Search query for Order ID search
 
   /// Persisted notified IDs — survives restarts so old orders NEVER re-ring.
   /// Pruned to recent 200 to bound storage.
@@ -300,10 +301,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         _attachOrdersListenerWithRetry();
         return;
       }
+      // A temporary network/auth refresh failure must never look like a
+      // logout. Keep the saved rider session and retry on the next stream
+      // event; only the explicit Logout action clears credentials.
+      debugPrint('⚠️ [RIDER] token repair deferred; saved session preserved');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Session expired — please login again', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.error),
-        );
+        Future.delayed(const Duration(seconds: 4), () {
+          if (mounted && _ordersSub == null) {
+            _attachOrdersListenerWithRetry();
+          }
+        });
       }
     } finally {
       _repairingStream = false;
@@ -1027,6 +1034,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     return 'Good evening';
   }
 
+  bool _matchesSearchQuery(Map<String, dynamic> orderData) {
+    if (_searchQuery.isEmpty) return true;
+    final orderId = (orderData['orderId'] as String? ?? '').toUpperCase();
+    return orderId.contains(_searchQuery.toUpperCase());
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -1410,6 +1423,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   // ── ACTIVE TAB ─────────────────────────────────────────────────────────
   Widget _buildActiveTab(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> activeDocs, List<QueryDocumentSnapshot<Map<String, dynamic>>> pendingDocs) {
     if (!_isOnline) return _buildOfflineView();
+
+    final filteredActiveDocs = activeDocs.where((doc) => _matchesSearchQuery(doc.data())).toList();
+    final filteredPendingDocs = pendingDocs.where((doc) => _matchesSearchQuery(doc.data())).toList();
+
     if (activeDocs.isEmpty && pendingDocs.isEmpty) {
       return Center(
         child: Padding(
@@ -1427,17 +1444,46 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ),
       );
     }
+
+    if (_searchQuery.isNotEmpty && filteredActiveDocs.isEmpty && filteredPendingDocs.isEmpty) {
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(width: 80, height: 80, decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: FoodMelaaColors.borderLight), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 16, offset: const Offset(0, 4))]), child: const Icon(Icons.search_rounded, size: 36, color: FoodMelaaColors.textGrey)),
+                    const SizedBox(height: 16),
+                    Text('No orders found', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)),
+                    const SizedBox(height: 6),
+                    Text('Try searching with a different Order ID', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: FoodMelaaColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final children = <Widget>[];
     int entranceIndex = 0;
-    if (activeDocs.isNotEmpty) {
-      children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('MY ACTIVE DELIVERIES', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(8)), child: Text('${activeDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
-      for (final doc in activeDocs) {
+
+    children.add(_buildSearchBar());
+
+    if (filteredActiveDocs.isNotEmpty) {
+      children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('MY ACTIVE DELIVERIES', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(8)), child: Text('${filteredActiveDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
+      for (final doc in filteredActiveDocs) {
         children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: true).animate().fadeIn(delay: (50 * entranceIndex).ms).slideY(begin: 0.1, curve: Curves.easeOutCubic)); entranceIndex++;
       }
     }
-    if (pendingDocs.isNotEmpty) {
-      children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('NEW ORDERS', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(8)), child: Text('${pendingDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
-      for (final doc in pendingDocs) {
+    if (filteredPendingDocs.isNotEmpty) {
+      children.add(Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Row(children: [Container(width: 3, height: 14, decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 8), Text('NEW ORDERS', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: FoodMelaaColors.textSecondary, letterSpacing: 0.8)), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: FoodMelaaColors.riderPrimary, borderRadius: BorderRadius.circular(8)), child: Text('${filteredPendingDocs.length}', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)))])));
+      for (final doc in filteredPendingDocs) {
         children.add(_buildPremiumOrderCard(context, doc.data(), doc.id, isActiveDelivery: false).animate().fadeIn(delay: (50 * entranceIndex).ms).slideY(begin: 0.1, curve: Curves.easeOutCubic)); entranceIndex++;
       }
     }
@@ -1463,6 +1509,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   Widget _buildHistoryTab(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> completedDocs) {
+    final filteredDocs = completedDocs.where((doc) => _matchesSearchQuery(doc.data())).toList();
+
     if (completedDocs.isEmpty) {
       return Center(
         child: Padding(
@@ -1479,10 +1527,43 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: completedDocs.length,
-      itemBuilder: (context, index) => _buildCompletedCard(context, completedDocs[index].data(), completedDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+    if (_searchQuery.isNotEmpty && filteredDocs.isEmpty) {
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(width: 80, height: 80, decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: FoodMelaaColors.borderLight), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 16, offset: const Offset(0, 4))]), child: const Icon(Icons.search_rounded, size: 36, color: FoodMelaaColors.textGrey)),
+                    const SizedBox(height: 16),
+                    Text('No orders found', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)),
+                    const SizedBox(height: 6),
+                    Text('Try searching with a different Order ID', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: FoodMelaaColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        _buildSearchBar(),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: filteredDocs.length,
+            itemBuilder: (context, index) => _buildCompletedCard(context, filteredDocs[index].data(), filteredDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: -0.1, curve: Curves.easeOutCubic),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1499,6 +1580,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   // ── CANCELLED TAB ──────────────────────────────────────────────────────
   Widget _buildCancelledTab(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> cancelledDocs) {
+    final filteredDocs = cancelledDocs.where((doc) => _matchesSearchQuery(doc.data())).toList();
+
     if (cancelledDocs.isEmpty) {
       return Center(
         child: Padding(
@@ -1516,10 +1599,43 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: cancelledDocs.length,
-      itemBuilder: (context, index) => _buildCancelledCard(context, cancelledDocs[index].data(), cancelledDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: 0.1, curve: Curves.easeOutCubic),
+
+    if (_searchQuery.isNotEmpty && filteredDocs.isEmpty) {
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(width: 80, height: 80, decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: FoodMelaaColors.borderLight), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 16, offset: const Offset(0, 4))]), child: const Icon(Icons.search_rounded, size: 36, color: FoodMelaaColors.textGrey)),
+                    const SizedBox(height: 16),
+                    Text('No orders found', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark)),
+                    const SizedBox(height: 6),
+                    Text('Try searching with a different Order ID', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: FoodMelaaColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        _buildSearchBar(),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: filteredDocs.length,
+            itemBuilder: (context, index) => _buildCancelledCard(context, filteredDocs[index].data(), filteredDocs[index].id).animate().fadeIn(delay: (50 * index).ms).slideX(begin: 0.1, curve: Curves.easeOutCubic),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1581,7 +1697,76 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     );
   }
 
-  
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white,
+          border: Border.all(
+            color: FoodMelaaColors.borderLight,
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          onChanged: (value) {
+            setState(() => _searchQuery = value);
+          },
+          decoration: InputDecoration(
+            hintText: 'Search by Order ID...',
+            hintStyle: GoogleFonts.inter(
+              fontSize: 13,
+              color: FoodMelaaColors.textGrey,
+            ),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 12, right: 8),
+              child: Icon(
+                Icons.search_rounded,
+                color: FoodMelaaColors.riderPrimary,
+                size: 20,
+              ),
+            ),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? GestureDetector(
+                    onTap: () {
+                      setState(() => _searchQuery = '');
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Icon(
+                        Icons.clear_rounded,
+                        color: FoodMelaaColors.textGrey,
+                        size: 20,
+                      ),
+                    ),
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+          ),
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: FoodMelaaColors.textDark,
+          ),
+          cursorColor: FoodMelaaColors.riderPrimary,
+        ),
+      ),
+    );
+  }
+
   Widget _receiptRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),

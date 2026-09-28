@@ -1699,24 +1699,35 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
 
   Widget _buildSearchBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.white,
+          color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF8F9FA),
           border: Border.all(
-            color: FoodMelaaColors.borderLight,
-            width: 1,
+            color: isDark ? const Color(0xFF404040) : const Color(0xFFE8E8E8),
+            width: 1.5,
           ),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+              spreadRadius: 0,
             ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+            if (!isDark)
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.8),
+                blurRadius: 8,
+                offset: const Offset(-2, -2),
+              ),
           ],
         ),
         child: TextField(
@@ -1726,15 +1737,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           decoration: InputDecoration(
             hintText: 'Search by Order ID...',
             hintStyle: GoogleFonts.inter(
-              fontSize: 13,
-              color: FoodMelaaColors.textGrey,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: isDark ? const Color(0xFF999999) : const Color(0xFF999999),
             ),
             prefixIcon: Padding(
-              padding: const EdgeInsets.only(left: 12, right: 8),
+              padding: const EdgeInsets.only(left: 14, right: 10),
               child: Icon(
                 Icons.search_rounded,
                 color: FoodMelaaColors.riderPrimary,
-                size: 20,
+                size: 22,
               ),
             ),
             suffixIcon: _searchQuery.isNotEmpty
@@ -1743,10 +1755,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       setState(() => _searchQuery = '');
                     },
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.only(right: 10),
                       child: Icon(
                         Icons.clear_rounded,
-                        color: FoodMelaaColors.textGrey,
+                        color: isDark ? const Color(0xFF666666) : const Color(0xFF999999),
                         size: 20,
                       ),
                     ),
@@ -1754,14 +1766,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 : null,
             border: InputBorder.none,
             contentPadding:
-                const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
           ),
           style: GoogleFonts.inter(
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: FoodMelaaColors.textDark,
+            color: isDark ? const Color(0xFFE0E0E0) : const Color(0xFF1A1A1A),
           ),
           cursorColor: FoodMelaaColors.riderPrimary,
+          cursorWidth: 2,
         ),
       ),
     );

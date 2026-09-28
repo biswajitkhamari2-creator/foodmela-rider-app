@@ -9,10 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/state/food_mela_state.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
 import 'package:food_track/core/utils/network_retry.dart';
-import 'package:food_track/core/services/incoming_order_call.dart';
-import 'package:food_track/core/services/order_ringtone_service.dart';
-import 'package:http/http.dart' as http;
-import 'package:food_track/core/services/rider_auth_service.dart';
 
 // ─── BACKGROUND MESSAGE HANDLER — RIDER APP ─────────────────────────────────
 @pragma('vm:entry-point')
@@ -36,14 +32,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         await NativeOrderAlert.bringAppToForeground();
       }
     } catch (_) {}
-    
-    // Data-only push aata hai (server notification block nahi bhejta),
-    // isliye OS strip nahi dikhata — full-screen local notification HAM dikhate hain.
     await _showCallNotification(
       title: title.isNotEmpty ? title : '📞 INCOMING ORDER CALL',
       body: '$body — Tap to Open Call',
       payload: message.data.toString(),
-      id: orderId.isNotEmpty ? FirebaseService.notificationIdForOrder(orderId) : null,
     );
     return;
   }
@@ -64,13 +56,12 @@ Future<void> _showCallNotification({
   required String title,
   required String body,
   String? payload,
-  int? id,
 }) async {
   try {
     const androidDetails = AndroidNotificationDetails(
       'food_mela_calls',
       'Food Mela Calls',
-      channelDescription: 'Incoming voice-call alerts (rings even when app is closed)',
+      channelDescription: 'Incoming voice-call alerts (WhatsApp style)',
       importance: Importance.max,
       priority: Priority.high,
       enableVibration: true,
@@ -84,7 +75,7 @@ Future<void> _showCallNotification({
     );
     const notificationDetails = NotificationDetails(android: androidDetails);
     await _localNotifications.show(
-      id ?? 900001,
+      900001, // fixed ID — a new call replaces the previous ring
       title,
       body,
       notificationDetails,
@@ -393,15 +384,6 @@ class FirebaseService {
         if (orderId.isNotEmpty && _settledOrderIds.contains(orderId)) {
           debugPrint('ℹ️ [RIDER FCM] dropped redelivery for settled $orderId');
           return;
-        }
-        
-        if (orderId.isNotEmpty && (isOrderNotified(orderId) || IncomingOrderCall.isShown(orderId))) {
-          debugPrint('ℹ️ [RIDER FCM] skipped notification, order $orderId is already notified/shown');
-          return;
-        }
-        
-        if (orderId.isNotEmpty) {
-          markOrderNotified(orderId);
         }
         final data = message.data
             .map((k, v) => MapEntry(k, v?.toString() ?? ''));
@@ -843,46 +825,6 @@ class FirebaseService {
     } catch (e) {
       debugPrint('Partner check notice: $e');
     }
-    // ── Backend accept FIRST (Redis is the authority) ──────────────────────
-    // Pehle sirf Firestore likha jata tha, backend ko pata hi nahi chalta tha.
-    // Isliye update-stage me 404 aata tha (TMP id Redis me nahi milta).
-    try {
-      final headers = await RiderAuthService.apiHeaders();
-      final res = await http
-          .post(
-            Uri.parse('https://foodmela.online/api/orders/accept'),
-            headers: headers,
-            body: jsonEncode({
-              'orderId': orderId,
-              'driverName': riderName,
-              'riderPartnerId': riderId,
-              if (riderPhone != null && riderPhone.isNotEmpty)
-                'riderPhone': riderPhone,
-            }),
-          )
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        try {
-          final body = jsonDecode(res.body) as Map<String, dynamic>;
-          if (body['success'] == true) {
-            debugPrint('✅ Backend accept confirmed for $orderId — single tap done');
-          return true; // Backend ne Redis + Firestore mirror dono likh diye. Fast-path skip: dobara likhne se race/double-tap lagta tha.
-          }
-        } catch (_) {
-          debugPrint('✅ Backend accept 200 for $orderId — single tap done');
-          return true;
-        }
-      } else if (res.statusCode == 409) {
-        debugPrint('🚫 Backend: order already taken: ${res.body}');
-        return false;
-      } else if (res.statusCode == 404) {
-        debugPrint('⚠️ Backend 404 for $orderId — Firestore fast-path se kaam chalao');
-      } else {
-        debugPrint('⚠️ Backend accept ${res.statusCode}: ${res.body}');
-      }
-    } catch (e) {
-      debugPrint('Backend accept notice ($e) — Firestore fast-path se kaam chalao');
-    }
     try {
       // Resolve the REAL Firestore doc id. Orders live under auto-generated ids,
       // but riders know the `FM-xxx` alias. Hitting `doc(orderId)` with the alias
@@ -930,7 +872,6 @@ class FirebaseService {
           'status': 'Order Accepted ✅',
           'riderName': riderName,
           'riderId': riderId,
-          'riderPartnerId': riderId,
           if (riderPhone != null && riderPhone.isNotEmpty) 'riderPhone': riderPhone,
           'acceptedAt': FieldValue.serverTimestamp(),
         });
@@ -944,6 +885,7 @@ class FirebaseService {
     }
   }
 
+  static final Set<String> _notifiedOrderIds = {};
 
   /// Subscribe rider device to new order FCM topic (when online)
   static Future<void> subscribeToRiderNotifications() async {
@@ -1023,26 +965,6 @@ class FirebaseService {
   /// for this rider session (accept/reject/cancel echo, snapshot replay).
   static final Set<String> _settledOrderIds = {};
 
-  static final Set<String> _globalNotifiedIds = {};
-
-  static bool isOrderNotified(String orderId) {
-    if (orderId.isEmpty) return false;
-    return _globalNotifiedIds.contains(orderId);
-  }
-
-  static Future<void> markOrderNotified(String orderId) async {
-    if (orderId.isEmpty) return;
-    _globalNotifiedIds.add(orderId);
-    if (_globalNotifiedIds.length > 200) {
-      _globalNotifiedIds.remove(_globalNotifiedIds.first);
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('global_notified_ids', _globalNotifiedIds.toList());
-    } catch (_) {}
-  }
-
-
   /// Mark an order settled (accepted / rejected / cancelled / taken).
   /// Clears its tray notification + ringtone and blocks future re-notify.
   static Future<void> settleOrder(String orderId) async {
@@ -1051,19 +973,14 @@ class FirebaseService {
     if (_settledOrderIds.length > 500) {
       _settledOrderIds.remove(_settledOrderIds.first);
     }
-    _globalNotifiedIds.add(orderId); // ensure it's considered notified too
-    IncomingOrderCall.markShown(orderId);
+    _notifiedOrderIds.remove(orderId);
     try {
-      await OrderRingtoneService.stopAll();
-      await NativeOrderAlert.stopAll();
       await dismissOrderNotification(orderId);
     } catch (_) {}
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
           'rider_settled_orders', _settledOrderIds.toList());
-      await prefs.setStringList(
-          'global_notified_ids', _globalNotifiedIds.toList());
     } catch (_) {}
   }
 
@@ -1075,8 +992,6 @@ class FirebaseService {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getStringList('rider_settled_orders') ?? [];
       _settledOrderIds.addAll(saved);
-      final savedNotified = prefs.getStringList('global_notified_ids') ?? [];
-      _globalNotifiedIds.addAll(savedNotified);
     } catch (_) {}
   }
 
@@ -1096,11 +1011,11 @@ class FirebaseService {
       debugPrint('ℹ️ Notification skipped (settled): $orderId');
       return;
     }
-    if (isOrderNotified(orderId) || IncomingOrderCall.isShown(orderId)) {
+    if (_notifiedOrderIds.contains(orderId)) {
       debugPrint('ℹ️ Notification skipped (already shown): $orderId');
       return;
     }
-    await markOrderNotified(orderId);
+    _notifiedOrderIds.add(orderId);
     debugPrint('🔔 Showing notification for new order: $orderId from $customerName — $orderCategoryLabel');
     final catPrefix = orderCategoryLabel.isNotEmpty ? 'New $orderCategoryLabel Order — ' : 'New Food Mela Order — ';
     await _showLocalNotification(

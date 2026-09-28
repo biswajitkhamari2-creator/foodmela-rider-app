@@ -79,7 +79,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(dctx, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
+                backgroundColor: const Color(0xFFD4AF37),
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -156,7 +156,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                 ElevatedButton(
                   onPressed: () => Navigator.pop(dctx, true),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
+                    backgroundColor: const Color(0xFFD4AF37),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -188,7 +188,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF047857),
+          backgroundColor: const Color(0xFF8C5E00),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: Text('Welcome, ${rider['name'] ?? 'Partner'}!',
@@ -234,7 +234,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
             keyboardType: keyboardType,
             style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
             decoration: InputDecoration(
-              prefixIcon: Icon(prefixIcon, color: const Color(0xFF10B981), size: 22),
+              prefixIcon: Icon(prefixIcon, color: const Color(0xFFD4AF37), size: 22),
               suffixIcon: suffixIcon,
               hintText: hintText,
               hintStyle: GoogleFonts.inter(fontSize: 14, color: Colors.white.withValues(alpha: 0.4)),
@@ -315,8 +315,8 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
-                              blurRadius: 24,
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.5),
+                              blurRadius: 32,
                               offset: const Offset(0, 8))
                         ],
                       ),
@@ -327,7 +327,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                   Center(
                     child: Text('FOOD MELA',
                         style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFFD4AF37), letterSpacing: 1.5)),
-                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2).shimmer(delay: 1000.ms, duration: 1500.ms, color: Colors.white.withOpacity(0.5)),
+                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2).shimmer(delay: 1000.ms, duration: 1500.ms, color: Colors.white.withValues(alpha: 0.5)),
                   Center(
                     child: Text('Delivery Partner',
                         style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -398,17 +398,25 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                     child: ElevatedButton(
                       onPressed: _loading ? null : _signIn,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFB8860B),
+                        backgroundColor: Colors.transparent,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        disabledBackgroundColor: const Color(0xFFB8860B).withOpacity(0.5),
-                        elevation: 0,
+                        disabledBackgroundColor: Colors.white.withValues(alpha: 0.1),
+                        elevation: 8,
+                        shadowColor: const Color(0xFFD4AF37).withValues(alpha: 0.4),
                       ),
                       child: _loading
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                          : Text('SIGN IN', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1)),
+                          : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('SIGN IN', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1.5)),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                            ],
+                          ),
                     ),
                   ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-                   .shimmer(delay: 2.seconds, duration: 2.seconds, color: Colors.white.withOpacity(0.2)),
+                   .shimmer(delay: 2.seconds, duration: 2.seconds, color: Colors.white.withValues(alpha: 0.2)),
 
                   const SizedBox(height: 24),
                   Center(

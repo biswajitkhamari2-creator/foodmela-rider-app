@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -54,7 +55,6 @@ class RiderDashboardScreen extends StatefulWidget {
 
 class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     with WidgetsBindingObserver {
-  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   final Set<String> _notifiedOrderIds = {};
   final Set<String> _rejectedOrderIds = {}; // Local reject — hides card until refresh
   final Set<String> _acceptingOrderIds = {}; // Prevent double-tap
@@ -268,14 +268,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           _handleOrdersSnapshot,
           onError: (e) {
             debugPrint('❌ [RIDER] Firestore orders listener error: $e');
-            // Auth expired or permission denied — rider needs to re-login
+            // permission-denied = custom-token session toot gayi (backend token
+            // rotate/expire). Pehle SILENT repair: token re-mint + stream
+            // re-attach. Kaamyaab to user ko pata bhi nahi chalega; fail tabhi
+            // snackbar. Kabhi auto-logout nahi.
             if (e.toString().contains('permission-denied') || e.toString().contains('unauthenticated')) {
-              debugPrint('⚠️ [RIDER] Auth expired — redirecting to login');
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Session expired — please login again', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.error),
-                );
-              }
+              _repairStreamSilently();
             }
           },
         );
@@ -286,6 +284,30 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       await Future.delayed(const Duration(milliseconds: 500));
     }
     debugPrint('❌ [RIDER] Failed to attach Firestore listener after 10 attempts');
+  }
+
+  bool _repairingStream = false;
+
+  Future<void> _repairStreamSilently() async {
+    if (_repairingStream || !mounted) return;
+    _repairingStream = true;
+    try {
+      final ok = await RiderAuthService.refreshFirestoreToken();
+      if (ok && mounted) {
+        try { await _ordersSub?.cancel(); } catch (_) {}
+        _ordersSub = null;
+        debugPrint('✅ [RIDER] token repaired — re-attaching orders stream');
+        _attachOrdersListenerWithRetry();
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Session expired — please login again', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white)), backgroundColor: FoodMelaaColors.error),
+        );
+      }
+    } finally {
+      _repairingStream = false;
+    }
   }
 
   void _toggleOnlineStatus(bool online) {
@@ -631,8 +653,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   final Set<String> _claimedOrderIds = {};
   Future<void> _acceptOrder(String orderId, String customerName, String customerPhone, String address, String itemsSummary, double totalAmount, {double? deliveryLat, double? deliveryLng}) async {
     if (_acceptingOrderIds.contains(orderId) || _claimedOrderIds.contains(orderId)) return; // Prevent double-tap
-    OrderRingtoneService.stopRinging(orderId);
-    FirebaseService.settleOrder(orderId);
+    _claimedOrderIds.add(orderId);
+    _notifiedOrderIds.add(orderId);
+    _saveNotifiedIds();
+    IncomingOrderCall.markShown(orderId);
+    await OrderRingtoneService.stopAll();
+    await NativeOrderAlert.stopAll();
+    await FirebaseService.settleOrder(orderId);
+    await FirebaseService.dismissOrderNotification(orderId);
     _dismissIncomingOrderScreen(orderId);
     setState(() => _acceptingOrderIds.add(orderId));
     // Show instant feedback — blocking loader so one tap is enough
@@ -647,7 +675,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       );
     }
     try {
-      final success = await FirebaseService.acceptOrder(orderId: orderId, riderName: _riderName, riderId: _riderId);
+      final success = await FirebaseService.acceptOrder(orderId: orderId, riderName: _riderName, riderId: _riderId, riderPhone: _riderPhone);
       if (!mounted) return;
       // Close the loader via the ROOT navigator (dialogs always live there),
       // then let the frame settle before any further navigation — pushing
@@ -986,9 +1014,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     );
   }
 
-  Widget _profileRow(IconData icon, String label, String value) {
-    return Row(children: [Icon(icon, size: 13, color: FoodMelaaColors.textGrey), const SizedBox(width: 6), Text('$label: ', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary)), Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : const Color(0xFF0F172A)), overflow: TextOverflow.ellipsis))]);
-  }
+
 
   Widget _profileStatusRow(String label, String value, Color color) {
     return Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 8), Text('$label: ', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: FoodMelaaColors.textSecondary)), Expanded(child: Text(value, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: color)))]);

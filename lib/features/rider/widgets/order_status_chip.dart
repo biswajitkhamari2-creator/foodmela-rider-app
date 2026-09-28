@@ -20,7 +20,7 @@ class OrderStatusChip extends StatelessWidget {
     }
     if (s == 'DELIVERED') return const Color(0xFF10B981);
     if (s.contains('CANCEL')) return const Color(0xFFEF4444);
-    return const Color(0xFF10B981);
+    return const Color(0xFFD4AF37);
   }
 
   @override

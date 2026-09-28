@@ -70,17 +70,17 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFF075E54), // WhatsApp Dark Teal/Green
+        backgroundColor: const Color(0xFF8C5E00), // WhatsApp Dark Teal/Green
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color(0xFF054C44),
-                Color(0xFF075E54),
-                Color(0xFF0F3E38),
-                Color(0xFF0B2D29),
+                Color(0xFF5C3A00),
+                Color(0xFF8C5E00),
+                Color(0xFFB8860B),
+                Color(0xFFD4AF37),
               ],
             ),
           ),
@@ -125,7 +125,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                       width: 8,
                       height: 8,
                       decoration: const BoxDecoration(
-                        color: Color(0xFF25D366),
+                        color: Color(0xFFD4AF37),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -133,7 +133,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                     Text(
                       'Ringing... • Order #${widget.orderId}',
                       style: GoogleFonts.poppins(
-                        color: const Color(0xFF25D366),
+                        color: const Color(0xFFD4AF37),
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -173,7 +173,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                         height: 170,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF25D366).withValues(alpha: 0.18),
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
                         ),
                       ),
                       // Middle ripple
@@ -182,7 +182,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                         height: 140,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF25D366).withValues(alpha: 0.30),
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.30),
                         ),
                       ),
                       // Inner avatar circle
@@ -203,7 +203,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                         child: const Center(
                           child: Icon(
                             Icons.delivery_dining_rounded,
-                            color: Color(0xFF075E54),
+                            color: Color(0xFF8C5E00),
                             size: 58,
                           ),
                         ),
@@ -219,7 +219,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: _isDark ? const Color(0xFF1C1815) : Colors.white,
+                    color: _isDark ? const Color(0xFF1C1813) : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -241,9 +241,9 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                       _infoRow(
                         Icons.shopping_bag_rounded,
                         widget.itemsSummary.isNotEmpty ? widget.itemsSummary : 'Order items ready for pickup',
-                        FoodMelaaColors.riderPrimary,
+                        Color(0xFFD4AF37),
                       ),
-                      Divider(height: 20, thickness: 1, color: _isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFEEEEEE)),
+                      Divider(height: 20, thickness: 1, color: _isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFEEEEEE)),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -267,19 +267,19 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFECFDF5),
+                              color: const Color(0xFFFFF6E0),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                              border: Border.all(color: const Color(0xFFEAD9A8)),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.currency_rupee_rounded, size: 14, color: Color(0xFF047857)),
+                                const Icon(Icons.currency_rupee_rounded, size: 14, color: Color(0xFFB8860B)),
                                 Text(
                                   'EARNING: +₹40',
                                   style: GoogleFonts.poppins(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF047857),
+                                    color: const Color(0xFFB8860B),
                                   ),
                                 ),
                               ],
@@ -368,11 +368,11 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                               width: 72,
                               height: 72,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF25D366),
+                                color: const Color(0xFFD4AF37),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF25D366).withValues(alpha: 0.45),
+                                    color: const Color(0xFFD4AF37).withValues(alpha: 0.45),
                                     blurRadius: 16,
                                     offset: const Offset(0, 6),
                                   ),
@@ -391,7 +391,7 @@ class _IncomingOrderScreenState extends State<IncomingOrderScreen>
                           Text(
                             'ACCEPT',
                             style: GoogleFonts.poppins(
-                              color: const Color(0xFF25D366),
+                              color: const Color(0xFFD4AF37),
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 1.0,

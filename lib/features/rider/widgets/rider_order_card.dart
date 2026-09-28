@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_gold.dart';
 import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 import 'package:food_track/features/rider/widgets/rider_order_detail_sheet.dart';
@@ -75,12 +76,12 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
     final stageColor = isCancelled
         ? FoodMelaaColors.error
         : stage == 0
-            ? FoodMelaaColors.riderPrimary
+            ? RiderGold.gold
             : stage == 1
                 ? const Color(0xFFD97706)
                 : stage == 2
-                    ? const Color(0xFF059669)
-                    : const Color(0xFF10B981);
+                    ? RiderGold.statusGreen
+                    : RiderGold.statusGreen;
 
     final stageText = isCancelled
         ? 'Cancelled'
@@ -99,7 +100,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: widget.isActiveDelivery
-              ? FoodMelaaColors.riderPrimary.withValues(alpha: 0.5)
+              ? RiderGold.gold.withValues(alpha: 0.5)
               : (isDark ? const Color(0xFF2B2F3A) : const Color(0xFFE2E8F0)),
           width: widget.isActiveDelivery ? 1.5 : 1.0,
         ),
@@ -309,7 +310,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                           height: 36,
                           width: 36,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            color: RiderGold.statusGreen.withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
@@ -370,7 +371,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF059669).withValues(alpha: 0.15),
+                                          color: RiderGold.statusGreen.withValues(alpha: 0.15),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text(
@@ -378,7 +379,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                                           style: GoogleFonts.poppins(
                                             fontSize: 9,
                                             fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF059669),
+                                            color: RiderGold.statusGreen,
                                           ),
                                         ),
                                       ),
@@ -406,7 +407,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: isPrepaid
-                                ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                ? RiderGold.statusGreen.withValues(alpha: 0.12)
                                 : const Color(0xFFD97706).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
@@ -416,7 +417,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                               Icon(
                                 isPrepaid ? Icons.check_circle_outline_rounded : Icons.payments_outlined,
                                 size: 12,
-                                color: isPrepaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                color: isPrepaid ? RiderGold.statusGreen : const Color(0xFFD97706),
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -424,7 +425,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                                 style: GoogleFonts.poppins(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: isPrepaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                  color: isPrepaid ? RiderGold.statusGreen : const Color(0xFFD97706),
                                 ),
                               ),
                             ],
@@ -617,7 +618,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF059669),
+                          color: RiderGold.statusGreen,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -700,7 +701,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: FoodMelaaColors.riderPrimary,
+                              backgroundColor: RiderGold.gold,
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -719,7 +720,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                         ),
                         child: IconButton(
                           padding: EdgeInsets.zero,
-                          icon: const Icon(Icons.info_outline_rounded, size: 20, color: FoodMelaaColors.riderPrimary),
+                          icon: const Icon(Icons.info_outline_rounded, size: 20, color: RiderGold.gold),
                           tooltip: 'View Full Details',
                           onPressed: () => _openDetailsSheet(context),
                         ),
@@ -741,7 +742,7 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF059669),
+                              backgroundColor: RiderGold.statusGreen,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
@@ -772,8 +773,8 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                             icon: const Icon(Icons.receipt_long_rounded, size: 18),
                             label: const Text('View Full Receipt & Details'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: FoodMelaaColors.riderPrimary,
-                              side: const BorderSide(color: FoodMelaaColors.riderPrimary, width: 1.2),
+                              foregroundColor: RiderGold.gold,
+                              side: const BorderSide(color: RiderGold.gold, width: 1.2),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),

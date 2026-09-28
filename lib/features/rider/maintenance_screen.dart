@@ -147,7 +147,7 @@ class _RiderMaintenanceScreenState extends State<RiderMaintenanceScreen>
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(99),
-                          boxShadow: [BoxShadow(color: FoodMelaaColors.riderPrimary.withOpacity(0.2), blurRadius: 8)],
+                          boxShadow: [BoxShadow(color: FoodMelaaColors.riderPrimary.withValues(alpha: 0.2), blurRadius: 8)],
                         ),
                         child: Text('⏳ Expected: ${widget.eta}',
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: FoodMelaaColors.riderPrimary)),

@@ -226,8 +226,10 @@ class IncomingOrderCall {
   ) async {
     final nav = navigatorKey?.currentState;
     if (nav == null) return;
-    OrderRingtoneService.stopRinging(orderId);
-    FirebaseService.settleOrder(orderId);
+    markShown(orderId);
+    await OrderRingtoneService.stopAll();
+    await NativeOrderAlert.stopAll();
+    await FirebaseService.settleOrder(orderId);
     dismiss(orderId);
     final messenger = ScaffoldMessenger.maybeOf(nav.context);
     final rootNav = Navigator.of(nav.context, rootNavigator: true);
@@ -369,7 +371,7 @@ class IncomingOrderCall {
 
   /// Remove the call screen (order claimed / cancelled / declined).
   static void dismiss(String orderId) {
-    _shownIds.remove(orderId);
+    markShown(orderId);
     final route = _routes.remove(orderId);
     if (route == null) return;
     // removeRoute during another transition (push/pop animation in flight)

@@ -65,6 +65,10 @@ class OrderRingtoneService {
       _ringingOrderIds.remove(orderId);
       _nativeActiveIds.remove(orderId);
       await NativeOrderAlert.stop(orderId);
+      await NativeOrderAlert.stopAll();
+      try {
+        await FlutterRingtonePlayer().stop();
+      } catch (_) {}
       if (_ringingOrderIds.isNotEmpty) {
         debugPrint('📞 Still ringing for ${_ringingOrderIds.length} order(s)');
         return;

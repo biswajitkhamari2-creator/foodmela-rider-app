@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 class FoodMelaaColors {
   FoodMelaaColors._();
 
-  // ── Rider Emerald Theme ──────────────────────────────────────────
-  static const Color riderPrimary = Color(0xFF047857);
-  static const Color riderPrimaryDark = Color(0xFF065F46);
-  static const Color riderPrimaryLight = Color(0xFFECFDF5);
-  static const Color riderAccent = Color(0xFF10B981);
+  // ── Rider Gold Theme ──────────────────────────────────────────
+  static const Color riderPrimary = Color(0xFFD4AF37);
+  static const Color riderPrimaryDark = Color(0xFF8C5E00);
+  static const Color riderPrimaryLight = Color(0xFFFFF6E0);
+  static const Color riderAccent = Color(0xFFE8C547);
 
   // ── Customer Orange (for category badges) ────────────────────────
   static const Color primary = Color(0xFFF15A24);
@@ -22,19 +22,19 @@ class FoodMelaaColors {
   static const Color ratingGreen = Color(0xFF24963F);
 
   // ── Backgrounds ──────────────────────────────────────────────────
-  static const Color background = Color(0xFFF8FAFC);
+  static const Color background = Color(0xFFFFFBF2);
   static const Color surfaceWhite = Color(0xFFFFFFFF);
   static const Color cardBackground = Color(0xFFFFFFFF);
 
   // ── Text ─────────────────────────────────────────────────────────
-  static const Color textDark = Color(0xFF1A1A2E);
-  static const Color textPrimary = Color(0xFF1A1A2E);
-  static const Color textSecondary = Color(0xFF6B7280);
-  static const Color textGrey = Color(0xFF9CA3AF);
+  static const Color textDark = Color(0xFF2B2118);
+  static const Color textPrimary = Color(0xFF2B2118);
+  static const Color textSecondary = Color(0xFF8A7364);
+  static const Color textGrey = Color(0xFF8A7364);
   static const Color textTertiary = Color(0xFF9CA3AF);
   static const Color textOnPrimary = Color(0xFFFFFFFF);
-  static const Color borderGrey = Color(0xFFE5E7EB);
-  static const Color borderLight = Color(0xFFF1F5F9);
+  static const Color borderGrey = Color(0xFFEAD9A8);
+  static const Color borderLight = Color(0xFFEAD9A8);
 
   // ── Status ───────────────────────────────────────────────────────
   static const Color success = Color(0xFF10B981);
@@ -63,19 +63,19 @@ class FoodMelaaColors {
   static const Color riderGoldLight = Color(0xFFF3E2A9);
   static const Color riderGoldDark = Color(0xFF997A15);
   static const Color riderGoldSurface = Color(0xFF1E1A10);
-  static const Color riderDarkSurface = Color(0xFF141210);
-  static const Color riderDarkCard = Color(0xFF1C1815);
-  static const Color riderDarkBorder = Color(0xFF2E2822);
-  static const Color riderDarkText = Color(0xFFF5EFE8);
-  static const Color riderDarkTextSecondary = Color(0xFFB8AFA4);
+  static const Color riderDarkSurface = Color(0xFF12100C);
+  static const Color riderDarkCard = Color(0xFF1C1813);
+  static const Color riderDarkBorder = Color(0xFF3A3226);
+  static const Color riderDarkText = Color(0xFFF5EFE4);
+  static const Color riderDarkTextSecondary = Color(0xFFB8AFA0);
   static const List<Color> riderGoldGradient = [
-    Color(0xFFD4AF37),
+    Color(0xFF8C5E00),
     Color(0xFFB8952E),
-    Color(0xFF997A15),
+    Color(0xFFD4AF37),
   ];
   static const List<Color> riderDarkGradient = [
     Color(0xFF1E1A10),
-    Color(0xFF1C1815),
-    Color(0xFF141210),
+    Color(0xFF1C1813),
+    Color(0xFF12100C),
   ];
 }

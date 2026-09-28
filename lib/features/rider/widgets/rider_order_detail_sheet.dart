@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_gold.dart';
 import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 
@@ -288,7 +289,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                           // Normal phone dialer removed per requirement.
                           Container(
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              color: RiderGold.statusGreen.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: IconButton(
@@ -347,7 +348,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF059669).withValues(alpha: 0.12),
+                                color: RiderGold.statusGreen.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
@@ -360,7 +361,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                                     style: GoogleFonts.poppins(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF059669),
+                                      color: RiderGold.statusGreen,
                                     ),
                                   ),
                                 ],
@@ -375,7 +376,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               icon: const Icon(Icons.directions_rounded, size: 18),
                               label: const Text('Open in Google Maps / Directions'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF059669),
+                                foregroundColor: RiderGold.statusGreen,
                                 side: const BorderSide(color: Color(0xFF059669), width: 1.2),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 padding: const EdgeInsets.symmetric(vertical: 11),
@@ -559,12 +560,12 @@ class RiderOrderDetailSheet extends StatelessWidget {
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: isPrepaid
-                                      ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                      ? RiderGold.statusGreen.withValues(alpha: 0.12)
                                       : const Color(0xFFD97706).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                     color: isPrepaid
-                                        ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                                        ? RiderGold.statusGreen.withValues(alpha: 0.3)
                                         : const Color(0xFFD97706).withValues(alpha: 0.3),
                                   ),
                                 ),
@@ -573,7 +574,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                                   style: GoogleFonts.poppins(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
-                                    color: isPrepaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                    color: isPrepaid ? RiderGold.statusGreen : const Color(0xFFD97706),
                                   ),
                                 ),
                               ),
@@ -612,7 +613,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                                     style: GoogleFonts.poppins(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF059669),
+                                      color: RiderGold.statusGreen,
                                     ),
                                   ),
                                 ],
@@ -620,7 +621,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF059669),
+                                  color: RiderGold.statusGreen,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
@@ -708,7 +709,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: FoodMelaaColors.riderPrimary,
+                              backgroundColor: RiderGold.gold,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               elevation: 0,
@@ -733,7 +734,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                               style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF059669),
+                              backgroundColor: RiderGold.statusGreen,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               elevation: 0,
@@ -745,7 +746,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                           child: ElevatedButton(
                             onPressed: () => Navigator.pop(context),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: FoodMelaaColors.riderPrimary,
+                              backgroundColor: RiderGold.gold,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
@@ -818,7 +819,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 15, color: FoodMelaaColors.riderPrimary),
+        Icon(icon, size: 15, color: RiderGold.gold),
         const SizedBox(width: 6),
         Text(
           title,
@@ -854,7 +855,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
                     height: 28,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: i <= stage ? const Color(0xFF10B981) : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                      color: i <= stage ? RiderGold.statusGreen : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
                     ),
                     alignment: Alignment.center,
                     child: Icon(
@@ -880,7 +881,7 @@ class RiderOrderDetailSheet extends StatelessWidget {
               Container(
                 width: 20,
                 height: 2,
-                color: i < stage ? const Color(0xFF10B981) : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                color: i < stage ? RiderGold.statusGreen : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
               ),
           ],
         ],

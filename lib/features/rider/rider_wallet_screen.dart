@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_gold.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 const double _perDelivery = 40.0;
@@ -113,14 +114,14 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _isDark ? const Color(0xFF0F1115) : const Color(0xFFF1F5F9),
+      backgroundColor: _isDark ? const Color(0xFF12100C) : const Color(0xFFFFFBF2),
       appBar: AppBar(
-        backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
+        backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: Container(
           margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1815) : FoodMelaaColors.background, shape: BoxShape.circle),
+          decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : FoodMelaaColors.background, shape: BoxShape.circle),
           child: IconButton(
             icon: Icon(Icons.arrow_back_rounded, color: _isDark ? Colors.white : FoodMelaaColors.textDark, size: 20),
             onPressed: () => Navigator.pop(context),
@@ -129,9 +130,9 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
         title: Text('My Wallet', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: _isDark ? Colors.white : FoodMelaaColors.textDark)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF10B981)))
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
           : RefreshIndicator(
-              backgroundColor: _isDark ? const Color(0xFF1C1815) : Colors.white, color: FoodMelaaColors.riderPrimary,
+              backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white, color: Color(0xFFD4AF37),
               onRefresh: _load,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -147,12 +148,12 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                         gradient: const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [Color(0xFF047857), Color(0xFF065F46), Color(0xFF064E3B)],
+                          colors: [Color(0xFF8C5E00), Color(0xFFB8860B), Color(0xFFD4AF37)],
                         ),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF047857).withValues(alpha: 0.35),
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
                             blurRadius: 24,
                             offset: const Offset(0, 10),
                           ),
@@ -169,7 +170,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                                   color: Colors.white.withValues(alpha: 0.16),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Icon(Icons.account_balance_wallet_rounded, color: _isDark ? const Color(0xFF1C1815) : Colors.white, size: 20),
+                                child: Icon(Icons.account_balance_wallet_rounded, color: _isDark ? const Color(0xFF1C1813) : Colors.white, size: 20),
                               ),
                               const SizedBox(width: 10),
                               Text('AVAILABLE BALANCE',
@@ -178,7 +179,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                           ),
                           const SizedBox(height: 12),
                           Text('₹${_available.toInt()}',
-                              style: GoogleFonts.poppins(fontSize: 44, fontWeight: FontWeight.w800, color: _isDark ? const Color(0xFF1C1815) : Colors.white, height: 1)),
+                              style: GoogleFonts.poppins(fontSize: 44, fontWeight: FontWeight.w800, color: _isDark ? const Color(0xFF1C1813) : Colors.white, height: 1)),
                           const SizedBox(height: 6),
                           Text('$_deliveredCount deliveries × ₹40',
                               style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
@@ -201,7 +202,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                               icon: Icon(
                                 _hasPending ? Icons.hourglass_top_rounded : Icons.payments_rounded,
                                 size: 18,
-                                color: _hasPending || _available < 40 ? FoodMelaaColors.textSecondary : FoodMelaaColors.riderPrimary,
+                                color: _hasPending || _available < 40 ? FoodMelaaColors.textSecondary : Color(0xFFD4AF37),
                               ),
                               label: Text(
                                 _hasPending
@@ -212,10 +213,10 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                                 style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w800,
-                                    color: _hasPending || _available < 40 ? FoodMelaaColors.textSecondary : FoodMelaaColors.riderPrimary),
+                                    color: _hasPending || _available < 40 ? FoodMelaaColors.textSecondary : Color(0xFFD4AF37)),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
+                                backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
                                 disabledBackgroundColor: Colors.white.withValues(alpha: 0.6),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -244,15 +245,15 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
-                          color: _isDark ? const Color(0xFF1C1815) : Colors.white,
+                          color: _isDark ? const Color(0xFF1C1813) : Colors.white,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: _isDark ? Colors.white.withOpacity(0.05) : FoodMelaaColors.borderLight),
+                          border: Border.all(color: _isDark ? RiderGold.borderDark : RiderGold.goldBorder),
                         ),
                         child: Column(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1815) : FoodMelaaColors.background, shape: BoxShape.circle),
+                              decoration: BoxDecoration(color: _isDark ? const Color(0xFF1C1813) : FoodMelaaColors.background, shape: BoxShape.circle),
                               child: const Icon(Icons.savings_outlined, color: FoodMelaaColors.textGrey, size: 28),
                             ),
                             const SizedBox(height: 12),
@@ -291,7 +292,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
     final String label;
     final IconData icon;
     if (status == 'approved') {
-      color = const Color(0xFF059669);
+      color = const Color(0xFF15803D);
       label = 'APPROVED';
       icon = Icons.check_circle_rounded;
     } else if (status == 'rejected') {
@@ -307,7 +308,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _isDark ? const Color(0xFF1C1815) : Colors.white,
+        color: _isDark ? const Color(0xFF1C1813) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
@@ -355,7 +356,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
     String? error;
     showModalBottomSheet(
       context: context,
-      backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
+      backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetCtx) => StatefulBuilder(
@@ -392,11 +393,11 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                   filled: true,
                   fillColor: _isDark ? const Color(0xFF27272A) : FoodMelaaColors.background,
                   prefixText: '₹ ',
-                  prefixStyle: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.w800, color: FoodMelaaColors.riderPrimary),
+                  prefixStyle: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFFD4AF37)),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: FoodMelaaColors.riderPrimary, width: 1.5)),
+                      borderSide: BorderSide(color: Color(0xFFD4AF37), width: 1.5)),
                   errorText: error,
                 ),
                 onChanged: (_) {
@@ -419,13 +420,13 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                             : null,
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                              color: enabled ? FoodMelaaColors.riderPrimary.withValues(alpha: 0.4) : FoodMelaaColors.borderGrey),
+                              color: enabled ? Color(0xFFD4AF37).withValues(alpha: 0.4) : FoodMelaaColors.borderGrey),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           padding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                         child: Text('₹$v',
                             style: GoogleFonts.poppins(
-                                fontSize: 12, fontWeight: FontWeight.w700, color: enabled ? FoodMelaaColors.riderPrimary : FoodMelaaColors.textGrey)),
+                                fontSize: 12, fontWeight: FontWeight.w700, color: enabled ? Color(0xFFD4AF37) : FoodMelaaColors.textGrey)),
                       ),
                     ),
                   );
@@ -450,7 +451,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                     await _submitWithdrawal(amount);
                   },
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: FoodMelaaColors.riderPrimary,
+                      backgroundColor: Color(0xFFD4AF37),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                   child: Text('Submit Request', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
@@ -483,7 +484,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
         context: ctx,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          backgroundColor: _isDark ? const Color(0xFF181B20) : Colors.white,
+          backgroundColor: _isDark ? const Color(0xFF1C1813) : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -516,7 +517,7 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: FoodMelaaColors.riderPrimary,
+                      backgroundColor: Color(0xFFD4AF37),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                   child: Text('Done', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),

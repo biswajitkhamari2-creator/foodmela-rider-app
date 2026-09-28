@@ -100,17 +100,23 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     if (_ending) return;
     _ending = true;
     _timer?.cancel();
-    await _watch?.cancel();
-    await CallEngine.instance.leave();
-    CallSession.endIf(widget.callId);
-    if (!remoteEnded) {
+    // Screen turant band karo — server/echo ka wait mat karo (wahi lag tha).
+    // Firestore + recording-stop background me fire-and-forget.
+    if (mounted) {
+      try { Navigator.of(context).pop(_seconds); } catch (_) {}
+    }
+    try { await _watch?.cancel(); } catch (_) {}
+    try { await CallEngine.instance.leave(); } catch (_) {}
+    try { CallSession.endIf(widget.callId); } catch (_) {}
+    // Server ko ended batao taaki dusri side bhi turant band ho (no-await nahi
+    // — backend 409 de to bhi local mirror me ended likha jata hai).
+    try {
       await CallService.instance.stopRecording(
         orderId: widget.orderId,
         callId: widget.callId,
         durationSeconds: _seconds,
       );
-    }
-    if (mounted) Navigator.of(context).pop(_seconds);
+    } catch (_) {}
   }
 
   @override

@@ -55,9 +55,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
         if (invite == null) return;
         if ((invite.status == CallStatus.ended ||
                 invite.status == CallStatus.missed ||
-                invite.status == CallStatus.failed) &&
+                invite.status == CallStatus.failed ||
+                invite.status == CallStatus.rejected) &&
             mounted) {
-          Navigator.of(context).pop();
+          try { Navigator.of(context).pop(); } catch (_) {}
         }
       });
     }

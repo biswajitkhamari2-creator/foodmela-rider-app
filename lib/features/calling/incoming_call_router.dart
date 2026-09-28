@@ -62,19 +62,19 @@ class IncomingCallRouter {
     nav.push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => IncomingCallScreen(
-        orderId: resolved!.orderId,
+        orderId: resolved.orderId,
         callerLabel: resolved.callerLabel,
         onAccept: () {
           nav.pop();
           final ctx = navigatorKey?.currentContext;
           if (ctx != null) {
             CallLauncher.answerCall(
-              context: ctx, invite: resolved!, myId: myId, myRole: myRole);
+              context: ctx, invite: resolved, myId: myId, myRole: myRole);
           }
         },
         onDecline: () {
           nav.pop();
-          CallLauncher.declineCall(resolved!);
+          CallLauncher.declineCall(resolved);
         },
       ),
     ));

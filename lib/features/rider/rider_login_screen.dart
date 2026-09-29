@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math' as math;
 
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/native_order_alert.dart';
@@ -32,6 +34,21 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
   Future<void> _askPermissionUpfront() async {
     if (!mounted || _askedPermission) return;
     _askedPermission = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('hasAskedRiderAlertPermission') == true ||
+          prefs.getBool('permExplainerShown') == true ||
+          prefs.getBool('startupPermsAsked') == true) {
+        return;
+      }
+      final allowed = await NativeOrderAlert.canUseFullScreenIntent();
+      if (allowed) {
+        await prefs.setBool('hasAskedRiderAlertPermission', true);
+        await prefs.setBool('permExplainerShown', true);
+        return;
+      }
+    } catch (_) {}
+
     if (!mounted) return;
     final go = await showDialog<bool>(
       context: context,
@@ -97,6 +114,11 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
         ),
       ),
     );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('hasAskedRiderAlertPermission', true);
+      await prefs.setBool('permExplainerShown', true);
+    } catch (_) {}
     if (go == true && mounted) {
       await NativeOrderAlert.openFullScreenIntentSettings();
     }
@@ -126,70 +148,77 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       } catch (_) {}
       if (!mounted) return;
       try {
-        final allowed = await NativeOrderAlert.canUseFullScreenIntent();
-        if (mounted && !allowed) {
-          final go = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (dctx) => AlertDialog(
-              backgroundColor: const Color(0xFF141210),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  side: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
-              title: Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(14)),
-                  child: const Icon(Icons.phone_in_talk_rounded,
-                      color: Color(0xFFD4AF37), size: 24),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                    child: Text('Enable Call Alerts',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white))),
-              ]),
-              content: Text(
-                'New orders will ring on your phone like a WhatsApp call — '
-                'full screen with ACCEPT / REJECT, even when the app is closed.\n\n'
-                'Tap ALLOW on the next screen to switch it ON.',
-                style: TextStyle(
-                    fontSize: 14,
-                    height: 1.6,
-                    color: Colors.white.withValues(alpha: 0.7)),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dctx, false),
-                  child: Text('SKIP',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.5))),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(dctx, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFD4AF37),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+        final prefs = await SharedPreferences.getInstance();
+        final alreadyAsked = prefs.getBool('hasAskedRiderAlertPermission') == true ||
+            prefs.getBool('permExplainerShown') == true;
+        if (!alreadyAsked) {
+          final allowed = await NativeOrderAlert.canUseFullScreenIntent();
+          if (mounted && !allowed) {
+            final go = await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (dctx) => AlertDialog(
+                backgroundColor: const Color(0xFF141210),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                title: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14)),
+                    child: const Icon(Icons.phone_in_talk_rounded,
+                        color: Color(0xFFD4AF37), size: 24),
                   ),
-                  child: const Text('ALLOW',
+                  const SizedBox(width: 12),
+                  const Expanded(
+                      child: Text('Enable Call Alerts',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white))),
+                ]),
+                content: Text(
+                  'New orders will ring on your phone like a WhatsApp call — '
+                  'full screen with ACCEPT / REJECT, even when the app is closed.\n\n'
+                  'Tap ALLOW on the next screen to switch it ON.',
+                  style: TextStyle(
+                      fontSize: 14,
+                      height: 1.6,
+                      color: Colors.white.withValues(alpha: 0.7)),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dctx, false),
+                    child: Text('SKIP',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withValues(alpha: 0.5))),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(dctx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD4AF37),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('ALLOW',
                       style: TextStyle(
                           fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
-          if (go == true) {
-            await NativeOrderAlert.openFullScreenIntentSettings();
+              );
+            await prefs.setBool('hasAskedRiderAlertPermission', true);
+            await prefs.setBool('permExplainerShown', true);
+            if (go == true) {
+              await NativeOrderAlert.openFullScreenIntentSettings();
+            }
           }
         }
       } catch (_) {}
@@ -219,19 +248,23 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
         ),
       );
     } on RiderAuthException catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e.message;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = 'Login failed. Please try again';
           _loading = false;
         });
+      }
     }
-    if (mounted && _loading) setState(() => _loading = false);
+    if (mounted && _loading) {
+      setState(() => _loading = false);
+    }
   }
 
   @override
@@ -353,33 +386,11 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                   ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.2),
                   const SizedBox(height: 40),
 
-                  // Brand Header — golden
-                  Center(
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                              color: const Color(0xFFD4AF37)
-                                  .withValues(alpha: 0.5),
-                              blurRadius: 32,
-                              offset: const Offset(0, 8))
-                        ],
-                      ),
-                      child: const Icon(Icons.delivery_dining_rounded,
-                          size: 44, color: Colors.white),
-                    ),
-                  )
-                      .animate()
-                      .scale(duration: 600.ms, curve: Curves.easeOutBack)
-                      .fadeIn(),
-                  const SizedBox(height: 24),
+                  // 3D Moving Delivery Bike Hero
+                  const Center(
+                    child: Moving3DBikeStage(),
+                  ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.1),
+                  const SizedBox(height: 16),
                   Center(
                     child: Text('FOOD MELA',
                         style: GoogleFonts.poppins(
@@ -549,3 +560,414 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
     );
   }
 }
+
+/// ─────────────────────────────────────────────────────────────────────────────
+/// 3D MOVING BIKE HERO STAGE
+/// Features 3D perspective tilt, continuous 360° spinning wheels with spokes,
+/// suspension floating bounce, FoodMela delivery box, and animated moving road lines.
+/// ─────────────────────────────────────────────────────────────────────────────
+class Moving3DBikeStage extends StatefulWidget {
+  const Moving3DBikeStage({super.key});
+
+  @override
+  State<Moving3DBikeStage> createState() => _Moving3DBikeStageState();
+}
+
+class _Moving3DBikeStageState extends State<Moving3DBikeStage>
+    with TickerProviderStateMixin {
+  late final AnimationController _wheelCtrl;
+  late final AnimationController _bounceCtrl;
+  late final AnimationController _roadCtrl;
+
+  late final Animation<double> _bounceAnim;
+  late final Animation<double> _tiltAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    // Continuous wheel spin (~400ms per full 360° rotation)
+    _wheelCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..repeat();
+
+    // Suspension road bounce / motorcycle vibration
+    _bounceCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    )..repeat(reverse: true);
+
+    _bounceAnim = Tween<double>(begin: -3.5, end: 3.5).animate(
+      CurvedAnimation(parent: _bounceCtrl, curve: Curves.easeInOut),
+    );
+    _tiltAnim = Tween<double>(begin: -0.025, end: 0.025).animate(
+      CurvedAnimation(parent: _bounceCtrl, curve: Curves.easeInOut),
+    );
+
+    // Continuous high-speed road stripes sliding
+    _roadCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _wheelCtrl.dispose();
+    _bounceCtrl.dispose();
+    _roadCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 3D Perspective Stage
+        SizedBox(
+          width: 220,
+          height: 125,
+          child: AnimatedBuilder(
+            animation: Listenable.merge([_bounceCtrl, _wheelCtrl, _roadCtrl]),
+            builder: (context, _) {
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0018) // 3D perspective depth
+                  ..rotateY(-0.14)          // 3D angle facing right
+                  ..rotateX(0.04),          // Slight elevation tilt
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    // Dynamic Golden Ground Glow / Shadow
+                    Positioned(
+                      bottom: 8,
+                      child: Container(
+                        width: 140 + (_bounceAnim.value * 2),
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(100),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
+                              blurRadius: 18,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Aerodynamic wind drift streaks behind bike
+                    Positioned(
+                      left: 10,
+                      top: 40,
+                      child: Opacity(
+                        opacity: 0.7,
+                        child: Row(
+                          children: [
+                            Container(width: 18, height: 2, decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.6), borderRadius: BorderRadius.circular(2))),
+                            const SizedBox(width: 5),
+                            Container(width: 12, height: 2, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(2))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 18,
+                      top: 56,
+                      child: Opacity(
+                        opacity: 0.6,
+                        child: Container(width: 22, height: 2, decoration: BoxDecoration(color: const Color(0xFFD4AF37).withValues(alpha: 0.7), borderRadius: BorderRadius.circular(2))),
+                      ),
+                    ),
+
+                    // Motorcycle Body with Suspension Bounce
+                    Transform.translate(
+                      offset: Offset(0, _bounceAnim.value),
+                      child: Transform.rotate(
+                        angle: _tiltAnim.value,
+                        child: SizedBox(
+                          width: 160,
+                          height: 95,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              // ── REAR WHEEL (Spinning 360°) ──
+                              Positioned(
+                                left: 6,
+                                bottom: 4,
+                                child: _buildSpinningWheel(),
+                              ),
+
+                              // ── FRONT WHEEL (Spinning 360°) ──
+                              Positioned(
+                                right: 6,
+                                bottom: 4,
+                                child: _buildSpinningWheel(),
+                              ),
+
+                              // ── MOTORCYCLE CHASSIS / FRAME ──
+                              Positioned(
+                                left: 24,
+                                top: 22,
+                                child: Container(
+                                  width: 108,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF8C5E00),
+                                        Color(0xFFD4AF37),
+                                        Color(0xFFFFDF73),
+                                        Color(0xFFB8860B),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(8),
+                                      topRight: Radius.circular(24),
+                                      bottomLeft: Radius.circular(16),
+                                      bottomRight: Radius.circular(8),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      // Metallic highlight stripe
+                                      Positioned(
+                                        top: 6,
+                                        left: 10,
+                                        right: 14,
+                                        height: 3,
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(2),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // ── FOOD MELA DELIVERY BOX (Mounted on Rear) ──
+                              Positioned(
+                                left: 16,
+                                top: 4,
+                                child: Container(
+                                  width: 48,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF1E1710), Color(0xFF2C2215)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFD4AF37), width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFD4AF37).withValues(alpha: 0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.lunch_dining_rounded, size: 16, color: Color(0xFFD4AF37)),
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        'FOOD',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 6.5,
+                                          fontWeight: FontWeight.w900,
+                                          color: const Color(0xFFD4AF37),
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      Text(
+                                        'MELA',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 6.5,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // ── WINDSHIELD & FRONT FORK ──
+                              Positioned(
+                                right: 18,
+                                top: 10,
+                                child: Transform.rotate(
+                                  angle: 0.25,
+                                  child: Container(
+                                    width: 10,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: Colors.cyanAccent.withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              // ── HEADLIGHT BEAM ──
+                              Positioned(
+                                right: -4,
+                                top: 22,
+                                child: Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Colors.amberAccent,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.amberAccent.withValues(alpha: 0.9),
+                                        blurRadius: 14,
+                                        spreadRadius: 3,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+
+        const SizedBox(height: 2),
+
+        // Animated High-Speed Road with moving dash marks
+        SizedBox(
+          width: 180,
+          height: 8,
+          child: AnimatedBuilder(
+            animation: _roadCtrl,
+            builder: (context, _) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  child: Stack(
+                    children: [
+                      // Moving dashed stripes
+                      Positioned(
+                        left: -(_roadCtrl.value * 30),
+                        right: -30,
+                        top: 2,
+                        bottom: 2,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: List.generate(8, (i) {
+                            return Container(
+                              width: 14,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD4AF37).withValues(alpha: 0.8),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpinningWheel() {
+    return RotationTransition(
+      turns: _wheelCtrl,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B1917),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFD4AF37), width: 2.2),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
+              blurRadius: 6,
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Outer tire treads
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
+              ),
+            ),
+            // Spokes (4 crossing lines = 8 spokes)
+            Transform.rotate(
+              angle: 0,
+              child: Container(width: 24, height: 1.5, color: const Color(0xFFD4AF37)),
+            ),
+            Transform.rotate(
+              angle: math.pi / 4,
+              child: Container(width: 24, height: 1.5, color: const Color(0xFFD4AF37)),
+            ),
+            Transform.rotate(
+              angle: math.pi / 2,
+              child: Container(width: 24, height: 1.5, color: const Color(0xFFD4AF37)),
+            ),
+            Transform.rotate(
+              angle: 3 * math.pi / 4,
+              child: Container(width: 24, height: 1.5, color: const Color(0xFFD4AF37)),
+            ),
+            // Center Gold Axle Hub
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFDF73),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

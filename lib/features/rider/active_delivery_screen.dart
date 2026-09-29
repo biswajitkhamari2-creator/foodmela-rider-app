@@ -14,8 +14,9 @@ import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:food_track/core/widgets/glowing_cooking_pot.dart';
 import 'package:food_track/core/services/sound_feedback_service.dart';
+import 'package:food_track/core/widgets/interactive_3d_card.dart';
+import 'package:food_track/core/widgets/glowing_border_beam.dart';
 
 class ActiveDeliveryScreen extends StatefulWidget {
   final String orderId;
@@ -86,14 +87,16 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   String _gpsStatus = 'starting';
 
   final List<String> _stepTitles = [
+    'Order Accepted',
     'Reached Pickup Store',
-    'Items Picked & Verified',
+    'Freshly Cooked & Packed',
     'Out for Delivery',
     'Complete Delivery',
   ];
   final List<IconData> _stepIcons = [
+    Icons.check_circle_outline_rounded,
     Icons.store_rounded,
-    Icons.inventory_2_rounded,
+    Icons.soup_kitchen_rounded,
     Icons.delivery_dining_rounded,
     Icons.verified_rounded,
   ];
@@ -377,6 +380,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
   }
 
   void _advanceStep() {
+    SoundFeedbackService.tap();
     if (_isCancelled) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: FoodMelaaColors.error,
@@ -403,7 +407,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       // Server-authoritative: advance the stepper ONLY after the backend
       // confirms the new stage. Never guess locally.
       _updateStageServerAuthoritative(_currentStep + 1);
-    } else {
+    } else if (_currentStep == 3) {
       _showOtpDialog();
     }
   }
@@ -437,12 +441,12 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
       targetLabel = 'Reached Store';
     } else if (step == 2) {
       targetStage = 2;
-      targetLabel = 'Items Picked Up';
+      targetLabel = 'Freshly Cooked & Packed';
     } else if (step == 3) {
-      targetStage = 2;
+      targetStage = 3;
       targetLabel = 'Out for Delivery';
     } else if (step == 4) {
-      targetStage = 3;
+      targetStage = 4;
       targetLabel = 'Delivered';
     }
 
@@ -592,7 +596,12 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         ...gps,
       };
 
-      if (isDelivery || targetStage == 3) {
+      if (step == 2 || targetStage == 2) {
+        updateData['isPacked'] = true;
+        updateData['packedAt'] = FieldValue.serverTimestamp();
+      }
+
+      if (isDelivery || step == 4 || targetStage >= 4) {
         updateData['deliveredAt'] = FieldValue.serverTimestamp();
         updateData['completedAt'] = FieldValue.serverTimestamp();
       }
@@ -649,26 +658,19 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
     final labelLower = label.toLowerCase();
     int step = 0;
 
-    if (s == 3) {
-      // Delivered/Complete
+    if (s >= 4 || labelLower.contains('delivered') || labelLower.contains('complete') || labelLower.contains('doorstep')) {
+      step = 4;
+    } else if (s == 3 || labelLower.contains('out for delivery') || labelLower.contains('on the way') || labelLower.contains('heading to')) {
       step = 3;
-    } else if (s == 2) {
-      // Picked up / Out for delivery
-      if (labelLower.contains('delivery') || labelLower.contains('deliver')) {
-        step = 3;
-      } else {
-        step = 2;
-      }
-    } else if (s == 1) {
-      // Accepted / Reached store / Items picked
-      if (labelLower.contains('reached') || labelLower.contains('picked') || labelLower.contains('store')) {
-        step = 1;
-      } else {
-        step = 0;
-      }
+    } else if (s == 2 || labelLower.contains('packed') || labelLower.contains('cook') || labelLower.contains('kitchen') || labelLower.contains('prep')) {
+      step = 2;
+    } else if (labelLower.contains('reached') || labelLower.contains('store') || labelLower.contains('pickup')) {
+      step = 1;
+    } else {
+      step = 0;
     }
 
-    if (mounted) setState(() => _currentStep = step.clamp(0, 3));
+    if (mounted) setState(() => _currentStep = step.clamp(0, 4));
   }
 
   /// Opens the customer's LIVE GPS pin in Google Maps navigation.
@@ -1122,106 +1124,125 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Navigation card — premium (with rider LIVE GPS readout)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6))
-                  ]),
-              child: Row(
-                children: [
-                  Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(12)),
-                      child: const Icon(Icons.navigation_rounded,
-                          color: Colors.white, size: 22)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                        Text(widget.address,
-                            style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
-                        Row(
-                          children: [
-                            if ((widget.deliveryLat ??
-                                        (_orderData?['deliveryLat'] as num?)
-                                            ?.toDouble()) !=
-                                    null &&
-                                (widget.deliveryLng ??
-                                        (_orderData?['deliveryLng'] as num?)
-                                            ?.toDouble()) !=
-                                    null)
-                              Container(
-                                margin: const EdgeInsets.only(right: 6),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: const Color(0xFF8C5E00),
-                                    borderRadius: BorderRadius.circular(6)),
-                                child: Text('📍 LIVE GPS',
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white)),
+            // Navigation card — 3D interactive (with rider LIVE GPS readout)
+            Interactive3DCard(
+              maxTiltAngle: 0.12,
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)]),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6))
+                    ]),
+                child: Row(
+                  children: [
+                    Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.navigation_rounded,
+                            color: Colors.white, size: 22)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text(widget.address,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                          Row(
+                            children: [
+                              if ((widget.deliveryLat ??
+                                          (_orderData?['deliveryLat'] as num?)
+                                              ?.toDouble()) !=
+                                      null &&
+                                  (widget.deliveryLng ??
+                                          (_orderData?['deliveryLng'] as num?)
+                                              ?.toDouble()) !=
+                                      null)
+                                Container(
+                                  margin: const EdgeInsets.only(right: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF8C5E00),
+                                      borderRadius: BorderRadius.circular(6)),
+                                  child: Text('📍 LIVE GPS',
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white)),
+                                ),
+                              Expanded(
+                                child: Text(
+                                    _gpsStatus == 'active'
+                                        ? '🚴 Live GPS active — customer sees you move'
+                                        : _gpsStatus == 'off'
+                                            ? '⚠️ GPS OFF — customer cannot track you'
+                                            : '📡 Starting live GPS…',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color:
+                                            Colors.white.withValues(alpha: 0.8))),
                               ),
-                            Expanded(
-                              child: Text(
-                                  _gpsStatus == 'active'
-                                      ? '🚴 Live GPS active — customer sees you move'
-                                      : _gpsStatus == 'off'
-                                          ? '⚠️ GPS OFF — customer cannot track you'
-                                          : '📡 Starting live GPS…',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.8))),
-                            ),
-                          ],
-                        ),
-                      ])),
-                  const SizedBox(width: 10),
-                  ElevatedButton.icon(
-                      onPressed: _openCustomerLocationInMaps,
-                      icon: const Icon(Icons.near_me_rounded,
-                          size: 14, color: Color(0xFFB8860B)),
-                      label: Text('GPS',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFB8860B))),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)))),
-                ],
+                            ],
+                          ),
+                        ])),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                        onPressed: _openCustomerLocationInMaps,
+                        icon: const Icon(Icons.near_me_rounded,
+                            size: 14, color: Color(0xFFB8860B)),
+                        label: Text('GPS',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFB8860B))),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)))),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // Workflow — premium
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                  color: _isDark ? const Color(0xFF1C1813) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+            // Workflow — 3D Glowing Border Beam
+            GlowingBorderBeam(
+              borderRadius: BorderRadius.circular(20),
+              borderWidth: 2.0,
+              glowWidth: 6.0,
+              duration: const Duration(milliseconds: 3200),
+              beamColors: const [
+                Colors.transparent,
+                Color(0x33FFB300),
+                Color(0xFFFFD54F),
+                Color(0xFFFFD700),
+                Colors.white,
+                Color(0xFFFFE082),
+                Colors.transparent,
+              ],
+              baseBorderColor: const Color(0xFFFFB300).withValues(alpha: 0.25),
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                    color: _isDark ? const Color(0xFF1C1813) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color: _isDark
                           ? RiderGold.borderDark
@@ -1255,7 +1276,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                 : FoodMelaaColors.textDark))
                   ]),
                   const SizedBox(height: 18),
-                  for (int i = 0; i < 4; i++) ...[
+                  for (int i = 0; i < 5; i++) ...[
                     Row(
                       children: [
                         Container(
@@ -1341,7 +1362,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                   child: Text('NOW', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFFD4AF37))))),
                       ],
                     ),
-                    if (i < 3)
+                    if (i < 4)
                       Container(
                           margin: const EdgeInsets.only(
                               left: 15, top: 4, bottom: 4),
@@ -1356,7 +1377,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 16),
 
             // Customer & order — premium
             Container(
@@ -1650,18 +1672,30 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                       Icon(
                           _statusLocked
                               ? Icons.lock_clock_rounded
-                              : (_currentStep == 3
-                                  ? Icons.vpn_key_rounded
-                                  : Icons.arrow_forward_rounded),
+                              : (_currentStep == 0
+                                  ? Icons.store_rounded
+                                  : (_currentStep == 1
+                                      ? Icons.soup_kitchen_rounded
+                                      : (_currentStep == 2
+                                          ? Icons.delivery_dining_rounded
+                                          : (_currentStep == 3
+                                              ? Icons.vpn_key_rounded
+                                              : Icons.check_circle_rounded)))),
                           color: _statusLocked ? Colors.white54 : Colors.white,
                           size: 18),
                       const SizedBox(width: 8),
                       Text(
                           _statusLocked
                               ? _lockLabel
-                              : (_currentStep == 3
-                                  ? 'Enter Customer OTP'
-                                  : 'Update Status'),
+                              : (_currentStep == 0
+                                  ? 'I Have Reached Store'
+                                  : (_currentStep == 1
+                                      ? 'Mark Cooked & Packed'
+                                      : (_currentStep == 2
+                                          ? 'Start Out for Delivery'
+                                          : (_currentStep == 3
+                                              ? 'Enter Customer OTP'
+                                              : 'Delivery Completed')))),
                           style: GoogleFonts.poppins(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,

@@ -6,6 +6,8 @@ import 'package:food_track/core/theme/rider_gold.dart';
 import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/rider/models/rider_order_model.dart';
 import 'package:food_track/features/rider/widgets/rider_order_detail_sheet.dart';
+import 'package:food_track/core/widgets/interactive_3d_card.dart';
+import 'package:food_track/core/widgets/glowing_border_beam.dart';
 
 class RiderOrderCard extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -93,8 +95,8 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
                     ? 'Out for Delivery'
                     : 'Delivered';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+    final cardContent = Container(
+      margin: widget.isActiveDelivery ? EdgeInsets.zero : const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1A1D24) : Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -789,6 +791,35 @@ class _RiderOrderCardState extends State<RiderOrderCard> {
         ),
       ),
     );
+
+    if (widget.isActiveDelivery) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Interactive3DCard(
+          maxTiltAngle: 0.12,
+          borderRadius: BorderRadius.circular(20),
+          child: GlowingBorderBeam(
+            borderRadius: BorderRadius.circular(20),
+            borderWidth: 2.2,
+            glowWidth: 7.0,
+            duration: const Duration(milliseconds: 3000),
+            beamColors: const [
+              Colors.transparent,
+              Color(0x33FFB300),
+              Color(0xFFFFD54F),
+              Color(0xFFFFD700),
+              Colors.white,
+              Color(0xFFFFE082),
+              Colors.transparent,
+            ],
+            baseBorderColor: const Color(0xFFFFB300).withValues(alpha: 0.35),
+            child: cardContent,
+          ),
+        ),
+      );
+    }
+
+    return cardContent;
   }
 
   void _openDetailsSheet(BuildContext context) {

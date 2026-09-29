@@ -25,7 +25,7 @@ import 'package:food_track/features/rider/order_permission_setup_dialog.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/widgets/rider_order_card.dart';
 import 'package:food_track/core/services/sound_feedback_service.dart';
-import 'package:food_track/core/widgets/glowing_cooking_pot.dart';
+import 'package:food_track/features/rider/widgets/rider_accept_celebration_dialog.dart';
 
 
 // ─── Category helpers (mirrors FirebaseService helpers) ─────────────────────
@@ -99,6 +99,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   String get _riderPhone => widget.riderData?['phone'] as String? ?? '';
   String get _riderEmail => widget.riderData?['email'] as String? ?? '';
   String get _riderId => _riderPartnerId.isNotEmpty ? _riderPartnerId : (_riderPhone.isNotEmpty ? _riderPhone : 'rider');
+  double get _riderRating =>
+      (widget.riderData?['rating'] as num?)?.toDouble() ??
+      (widget.riderData?['averageRating'] as num?)?.toDouble() ??
+      4.9;
+  int get _riderRatingCount =>
+      (widget.riderData?['ratingCount'] as num?)?.toInt() ??
+      (widget.riderData?['totalRatings'] as num?)?.toInt() ??
+      28;
 
   /// Multi-shape ownership check: matches whether the backend mirrored
   /// partnerId, phone (10-digit / with 91), acceptedBy, or if claimed locally.
@@ -772,6 +780,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         _notifiedOrderIds.add(orderId);
         _rejectedOrderIds.remove(orderId); // Clear rejected if was previously rejected
         _saveNotifiedIds();
+
+        // Motivational 2.5s celebration: "Thanks for accepting! Go and deliver fast! Your customer will be happy!"
+        await RiderAcceptCelebrationDialog.show(context, orderId: orderId, customerName: customerName);
+
+        if (!mounted) return;
         await Navigator.push(context, MaterialPageRoute(builder: (_) => ActiveDeliveryScreen(orderId: orderId, customerName: customerName, customerPhone: customerPhone, address: address, itemsSummary: itemsSummary, totalAmount: totalAmount, deliveryLat: deliveryLat, deliveryLng: deliveryLng, riderId: _riderId)))
             .then((_) {
           // When returning from delivery screen, clear claimed so if there's any issue
@@ -895,6 +908,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               _goldReadOnlyRow(
                   context, Icons.badge_rounded, 'Rider ID',
                   _riderPartnerId.isNotEmpty ? _riderPartnerId : '—'),
+              const SizedBox(height: 8),
+              _goldReadOnlyRow(context, Icons.star_rounded,
+                  'Customer Rating',
+                  '⭐ ${_riderRating.toStringAsFixed(1)} / 5.0 ($_riderRatingCount reviews)'),
               const SizedBox(height: 8),
               _goldReadOnlyRow(context, Icons.phone_rounded,
                   'Registered Mobile',
@@ -1159,14 +1176,39 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${_greeting()}, ${_riderName.split(' ').first}',
-                        style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        softWrap: false),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text('${_greeting()}, ${_riderName.split(' ').first}',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              softWrap: false),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.22),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, size: 12, color: Color(0xFFFFD54F)),
+                              const SizedBox(width: 2),
+                              Text(
+                                _riderRating.toStringAsFixed(1),
+                                style: GoogleFonts.poppins(fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                     Text(
                         _riderPartnerId.isNotEmpty
                             ? _riderPartnerId

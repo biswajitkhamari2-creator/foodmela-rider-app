@@ -24,6 +24,8 @@ import 'package:food_track/features/rider/incoming_order_screen.dart';
 import 'package:food_track/features/rider/order_permission_setup_dialog.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/widgets/rider_order_card.dart';
+import 'package:food_track/core/services/sound_feedback_service.dart';
+import 'package:food_track/core/widgets/glowing_cooking_pot.dart';
 
 
 // ─── Category helpers (mirrors FirebaseService helpers) ─────────────────────
@@ -168,6 +170,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FirebaseService.dismissAllNotifications();
     _loadNotifiedIds();
     // Restore settled (accepted/rejected/cancelled) IDs so restarts can
     // never re-ring or re-notify them — the single choke point in
@@ -213,6 +216,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      FirebaseService.dismissAllNotifications();
       _refreshFullScreenState();
     }
   }
@@ -733,21 +737,45 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     _claimedOrderIds.add(orderId);
     _notifiedOrderIds.add(orderId);
     _saveNotifiedIds();
-    IncomingOrderCall.markShown(orderId);
+    SoundFeedbackService.success();
     await OrderRingtoneService.stopAll();
     await NativeOrderAlert.stopAll();
     await FirebaseService.settleOrder(orderId);
     await FirebaseService.dismissOrderNotification(orderId);
+    await FirebaseService.dismissAllNotifications();
     _dismissIncomingOrderScreen(orderId);
     setState(() => _acceptingOrderIds.add(orderId));
-    // Show instant feedback — blocking loader so one tap is enough
+    // Show instant feedback — glowing cooking pot animation with rising smoke
     if (mounted) {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const PopScope(
+        builder: (_) => PopScope(
           canPop: false,
-          child: Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 32),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const GlowingCookingPot(
+                  size: 140,
+                  subtitle: 'Order Accepted! Kitchen is preparing...',
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }

@@ -252,6 +252,20 @@ class FirebaseService {
     }
   }
 
+  /// Dismiss all active notifications from Android notification drawer
+  static Future<void> dismissAllNotifications() async {
+    try {
+      await _localNotifications.cancelAll();
+      final android = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      await android?.cancel(0, tag: 'foodmela_rider_order');
+      debugPrint('🧹 [RIDER] all notifications dismissed from tray');
+    } catch (e) {
+      debugPrint('⚠️ cancelAll error: $e');
+    }
+  }
+
   /// Dismiss the tray notification for an order (accept / decline / claimed).
   /// Also stops any ringing tied to it. Cancels BOTH the app-owned copy (by
   /// per-order ID) and the system copy posted by FCM's notification block
@@ -264,10 +278,12 @@ class FirebaseService {
         final android = _localNotifications
             .resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>();
-        // System copy posted by FCM carries tag = orderId (backend sets it).
-        await android?.cancel(notificationIdForOrder(orderId),
-            tag: orderId);
+        // System copy posted by FCM carries tag = orderId or fixed rider tag.
+        await android?.cancel(0, tag: 'foodmela_rider_order');
+        await android?.cancel(0, tag: orderId);
+        await android?.cancel(notificationIdForOrder(orderId), tag: orderId);
       } catch (_) {}
+      await dismissAllNotifications();
       debugPrint('🧹 [RIDER] notification dismissed for $orderId');
     } catch (e) {
       debugPrint('⚠️ notification cancel notice: $e');

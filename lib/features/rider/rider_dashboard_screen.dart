@@ -337,17 +337,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   /// was offline. Only FRESH orders (just placed) trigger sound + full screen.
   static const Duration _freshOrderWindow = Duration(minutes: 30);
 
-  DateTime _orderTime(Map<String, dynamic> data) {
-    try {
-      final v = data['createdAt'];
-      if (v is Timestamp) return v.toDate();
-      if (v is String && v.isNotEmpty) return DateTime.parse(v);
-      if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
-      final fb = data['placedAt'];
-      if (fb is String && fb.isNotEmpty) return DateTime.parse(fb);
-    } catch (_) {}
-    return DateTime.fromMillisecondsSinceEpoch(0);
-  }
+  DateTime _orderTime(Map<String, dynamic> data) => FirebaseService.orderTimestamp(data);
 
   void _handleOrdersSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
     if (!_isOnline) return;

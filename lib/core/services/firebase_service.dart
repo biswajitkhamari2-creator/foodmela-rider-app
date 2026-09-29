@@ -739,10 +739,7 @@ class FirebaseService {
   /// Vercel FCM push is backup for killed/background app; Firestore stream is primary for foreground.
   static Stream<QuerySnapshot<Map<String, dynamic>>>? get liveOrdersStream {
     if (!_isFirebaseInitialized) return null;
-    return FirebaseFirestore.instance
-        .collection('orders')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+    return FirebaseFirestore.instance.collection('orders').snapshots();
   }
 
   /// Fallback stream WITHOUT orderBy — used when the ordered query errors
@@ -755,34 +752,70 @@ class FirebaseService {
 
   /// Real timestamp extractor — handles Firestore Timestamp, ISO string,
   /// millis int, seconds-double, or missing (missing sorts oldest).
-  /// Checks `createdAt`, then `placedAt`, then `updatedAt`, then `timestamp`.
+  /// Checks `createdAt`, then `placedAt`, then `timestamp`.
+  /// Never checks `updatedAt` for placement order so updated orders don't jump ahead!
   static DateTime orderTimestamp(Map<String, dynamic> data) {
     DateTime? tryParse(dynamic v) {
+      if (v == null) return null;
       try {
         if (v is Timestamp) return v.toDate();
+        if (v is DateTime) return v;
+        if (v is Map) {
+          final sec = v['_seconds'] ?? v['seconds'];
+          if (sec is num) {
+            return DateTime.fromMillisecondsSinceEpoch((sec * 1000).toInt(), isUtc: true).toLocal();
+          }
+        }
         if (v is String && v.isNotEmpty) {
           final parsed = DateTime.tryParse(v);
-          if (parsed != null) return parsed;
+          if (parsed != null) return parsed.isUtc ? parsed.toLocal() : parsed;
           final asNum = num.tryParse(v);
           if (asNum != null) {
             return DateTime.fromMillisecondsSinceEpoch(
               asNum < 10000000000 ? (asNum * 1000).toInt() : asNum.toInt(),
-            );
+            ).toLocal();
           }
         }
         if (v is num) {
           return DateTime.fromMillisecondsSinceEpoch(
             v < 10000000000 ? (v * 1000).toInt() : v.toInt(),
-          );
+          ).toLocal();
         }
       } catch (_) {}
       return null;
     }
 
-    for (final key in const ['createdAt', 'placedAt', 'updatedAt', 'timestamp']) {
+    // ONLY creation timestamps — never updatedAt!
+    for (final key in const ['createdAt', 'placedAt', 'timestamp']) {
       final parsed = tryParse(data[key]);
-      if (parsed != null) return parsed;
+      if (parsed != null && parsed.millisecondsSinceEpoch > 0) return parsed;
     }
+
+    // Secondary fallback: extract timestamp or sequence from the canonical Order ID!
+    final oid = (data['orderId'] ?? data['id'] ?? '').toString();
+    final fmSeqMatch = RegExp(r'FM-(\d{4})(\d{2})(\d{2})-(\d+)').firstMatch(oid);
+    if (fmSeqMatch != null) {
+      try {
+        final year = int.parse(fmSeqMatch.group(1)!);
+        final month = int.parse(fmSeqMatch.group(2)!);
+        final day = int.parse(fmSeqMatch.group(3)!);
+        final seq = int.parse(fmSeqMatch.group(4)!);
+        return DateTime(year, month, day).add(Duration(seconds: seq));
+      } catch (_) {}
+    }
+
+    final fmMilliMatch = RegExp(r'FM-?(\d{6,})').firstMatch(oid);
+    if (fmMilliMatch != null) {
+      try {
+        final raw = int.parse(fmMilliMatch.group(1)!);
+        if (raw > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(raw);
+        } else if (raw > 1000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(raw * 1000);
+        }
+      } catch (_) {}
+    }
+
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
@@ -799,11 +832,13 @@ class FirebaseService {
   /// across refresh, reconnect, pagination, and returning to dashboard.
   static void sortNewestFirst<T>(List<T> docs, Map<String, dynamic> Function(T) dataOf, [String Function(T)? idOf]) {
     docs.sort((a, b) {
-      final timeCmp = orderTimestamp(dataOf(b)).compareTo(orderTimestamp(dataOf(a)));
+      final timeB = orderTimestamp(dataOf(b)).millisecondsSinceEpoch;
+      final timeA = orderTimestamp(dataOf(a)).millisecondsSinceEpoch;
+      final timeCmp = timeB.compareTo(timeA); // Higher/newer ms comes FIRST (upper)
       if (timeCmp != 0) return timeCmp;
       final ka = idOf != null ? idOf(a) : '';
       final kb = idOf != null ? idOf(b) : '';
-      return kb.compareTo(ka);
+      return kb.compareTo(ka); // Higher/newer ID comes FIRST
     });
   }
 

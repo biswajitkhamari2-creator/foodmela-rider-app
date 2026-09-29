@@ -98,6 +98,68 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   String get _riderEmail => widget.riderData?['email'] as String? ?? '';
   String get _riderId => _riderPartnerId.isNotEmpty ? _riderPartnerId : (_riderPhone.isNotEmpty ? _riderPhone : 'rider');
 
+  /// Multi-shape ownership check: matches whether the backend mirrored
+  /// partnerId, phone (10-digit / with 91), acceptedBy, or if claimed locally.
+  bool _isMine(Map<String, dynamic> data, [String? docId]) {
+    final oid = (data['orderId'] ?? docId ?? '').toString();
+    if (oid.isNotEmpty && _claimedOrderIds.contains(oid)) return true;
+
+    final myPhoneDigits = _riderPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    final myPhone10 = myPhoneDigits.length >= 10
+        ? myPhoneDigits.substring(myPhoneDigits.length - 10)
+        : myPhoneDigits;
+
+    final myKeys = <String>{
+      _riderId.trim().toLowerCase(),
+      _riderPartnerId.trim().toLowerCase(),
+      _riderPhone.trim().toLowerCase(),
+      if (myPhoneDigits.isNotEmpty) myPhoneDigits.toLowerCase(),
+      if (myPhone10.isNotEmpty) myPhone10.toLowerCase(),
+    }..remove('');
+
+    final docRiderId = (data['riderId'] as String? ?? '').trim();
+    final docPartnerId = (data['riderPartnerId'] as String? ?? data['partnerId'] as String? ?? '').trim();
+    final docPhone = (data['riderPhone'] as String? ?? data['acceptedByPhone'] as String? ?? '').trim();
+    final docAcceptedBy = (data['acceptedBy'] as String? ?? '').trim();
+
+    if (docRiderId.isEmpty && docPartnerId.isEmpty && docPhone.isEmpty && docAcceptedBy.isEmpty) {
+      return false;
+    }
+
+    final docPhoneDigits = docPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    final docPhone10 = docPhoneDigits.length >= 10
+        ? docPhoneDigits.substring(docPhoneDigits.length - 10)
+        : docPhoneDigits;
+
+    final docRiderDigits = docRiderId.replaceAll(RegExp(r'[^0-9]'), '');
+    final docRider10 = docRiderDigits.length >= 10
+        ? docRiderDigits.substring(docRiderDigits.length - 10)
+        : docRiderDigits;
+
+    final docAcceptedDigits = docAcceptedBy.replaceAll(RegExp(r'[^0-9]'), '');
+    final docAccepted10 = docAcceptedDigits.length >= 10
+        ? docAcceptedDigits.substring(docAcceptedDigits.length - 10)
+        : docAcceptedDigits;
+
+    final docKeys = <String>{
+      docRiderId.toLowerCase(),
+      docPartnerId.toLowerCase(),
+      docPhone.toLowerCase(),
+      docAcceptedBy.toLowerCase(),
+      if (docPhoneDigits.isNotEmpty) docPhoneDigits.toLowerCase(),
+      if (docPhone10.isNotEmpty) docPhone10.toLowerCase(),
+      if (docRiderDigits.isNotEmpty) docRiderDigits.toLowerCase(),
+      if (docRider10.isNotEmpty) docRider10.toLowerCase(),
+      if (docAcceptedDigits.isNotEmpty) docAcceptedDigits.toLowerCase(),
+      if (docAccepted10.isNotEmpty) docAccepted10.toLowerCase(),
+    }..remove('');
+
+    for (final k in myKeys) {
+      if (docKeys.contains(k)) return true;
+    }
+    return false;
+  }
+
   /// True once the OS confirms full-screen alerts are allowed. Starts false
   /// so the banner shows; set true when granted (banner hides itself).
   bool _fullScreenGranted = false;
@@ -206,8 +268,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     for (final doc in activeDocs) {
       final data = doc.data();
       final orderId = data['orderId'] as String? ?? doc.id;
-      final riderId = data['riderId'] as String?;
-      if (riderId == _riderId) myActives.add(orderId);
+      if (_isMine(data, orderId)) myActives.add(orderId);
     }
     // Drop subs for orders no longer mine
     for (final id in _callSubs.keys.toList()) {
@@ -434,8 +495,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         final gone = d == null ||
             (d['isDeleted'] as bool? ?? false) ||
             status.contains('cancel');
-        final mine =
-            claimer != null && claimer.isNotEmpty && claimer == _riderId;
+        final mine = d != null && _isMine(d, ringingId);
         final takenByOther =
             claimer != null && claimer.isNotEmpty && !mine;
         final wasViewing = _incomingRoutes.containsKey(ringingId) ||
@@ -1229,8 +1289,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
               final isDeleted = d['isDeleted'] as bool? ?? false;
-              final riderId = d['riderId'] as String?;
-              return (stage == 1 || stage == 2) && riderId == _riderId && !isDeleted;
+              return (stage == 1 || stage == 2) && _isMine(d, doc.id) && !isDeleted;
             }).toList();
             // ── Global incoming-call watch: ring even if delivery screen closed ──
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1239,27 +1298,24 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             final completedDocs = uniqueDocs.where((doc) {
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
-              final riderId = d['riderId'] as String?;
               final status = (d['status'] as String? ?? '').toLowerCase();
               // Completed = ONLY stage 3 and NOT cancelled
-              return stage == 3 && riderId == _riderId && !status.contains('cancel');
+              return stage == 3 && _isMine(d, doc.id) && !status.contains('cancel');
             }).toList();
             // ── CANCELLED: stage == -1 OR status contains cancel, assigned to this rider ──
             final cancelledForRider = uniqueDocs.where((doc) {
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
               final status = (d['status'] as String? ?? '').toLowerCase();
-              final riderId = d['riderId'] as String?;
-              return (stage == -1 || status.contains('cancel')) && riderId == _riderId;
+              return (stage == -1 || status.contains('cancel')) && _isMine(d, doc.id);
             }).toList();
             // ── EARNINGS: ONLY after successful DELIVERY (stage == 3) ──────────
             final earnedDocs = uniqueDocs.where((doc) {
               final d = doc.data();
               final stage = (d['stage'] as num?)?.toInt() ?? 0;
-              final riderId = d['riderId'] as String?;
               final isDeleted = d['isDeleted'] as bool? ?? false;
               final status = d['status'] as String? ?? '';
-              return stage == 3 && riderId == _riderId && !isDeleted && !status.toLowerCase().contains('cancel');
+              return stage == 3 && _isMine(d, doc.id) && !isDeleted && !status.toLowerCase().contains('cancel');
             }).toList();
             final totalEarnings = earnedDocs.length * 40.0;
 

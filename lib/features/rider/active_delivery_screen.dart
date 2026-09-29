@@ -1353,24 +1353,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen>
                                   : Colors.white.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(2))),
                   ],
-                  if (_currentStep <= 1) ...[
-                    const SizedBox(height: 18),
-                    Center(
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: _isDark ? const Color(0xFF261F14) : const Color(0xFFFFF8F0),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFFFDBCE), width: 1.2),
-                        ),
-                        child: const GlowingCookingPot(
-                          size: 130,
-                          subtitle: 'Restaurant kitchen is preparing this fresh meal...',
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

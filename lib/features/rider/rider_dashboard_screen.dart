@@ -745,37 +745,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     await FirebaseService.dismissAllNotifications();
     _dismissIncomingOrderScreen(orderId);
     setState(() => _acceptingOrderIds.add(orderId));
-    // Show instant feedback — glowing cooking pot animation with rising smoke
+    // Show instant feedback — blocking loader so one tap is enough
     if (mounted) {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => PopScope(
+        builder: (_) => const PopScope(
           canPop: false,
-          child: Center(
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: const GlowingCookingPot(
-                  size: 140,
-                  subtitle: 'Order Accepted! Kitchen is preparing...',
-                ),
-              ),
-            ),
-          ),
+          child: Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
         ),
       );
     }

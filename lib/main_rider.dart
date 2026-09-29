@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
+import 'package:food_track/core/theme/rider_theme.dart';
+import 'package:food_track/core/state/rider_theme_state.dart';
 import 'package:food_track/core/services/firebase_service.dart';
 import 'package:food_track/core/services/incoming_order_call.dart';
 import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
 import 'package:food_track/features/rider/rider_dashboard_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Rider entry point (alternative) ────────────────────────────────────────
 // Canonical entry is lib/main.dart — this file mirrors it so
 // `flutter run -t lib/main_rider.dart` also works. Keep them in sync.
 
-final GlobalKey<NavigatorState> riderNavigatorKeyAlt = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> riderNavigatorKeyAlt =
+    GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandlerAlt(RemoteMessage message) async {
+Future<void> firebaseMessagingBackgroundHandlerAlt(
+    RemoteMessage message) async {
   return firebaseMessagingBackgroundHandler(message);
 }
 
@@ -25,7 +29,21 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandlerAlt);
   try {
-    await Permission.notification.request();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('startupPermsAsked') != true) {
+        if (!await Permission.notification.isGranted) {
+          await Permission.notification.request();
+        }
+        if (!await Permission.microphone.isGranted) {
+          await Permission.microphone.request();
+        }
+        try {
+          await Permission.ignoreBatteryOptimizations.request();
+        } catch (_) {}
+        await prefs.setBool('startupPermsAsked', true);
+      }
+    } catch (_) {}
     await FirebaseService.initialize();
     // Full-screen incoming-order call UI (foreground FCM + tap-to-open).
     IncomingOrderCall.navigatorKey = riderNavigatorKeyAlt;
@@ -33,6 +51,7 @@ void main() async {
   } catch (e) {
     debugPrint('Init notice: $e');
   }
+  riderThemeState = await RiderThemeState.load();
   runApp(const FoodMelaRiderAppAlt());
 }
 
@@ -45,53 +64,9 @@ class FoodMelaRiderAppAlt extends StatelessWidget {
       navigatorKey: riderNavigatorKeyAlt,
       title: 'FOOD MELA Partner',
       debugShowCheckedModeBanner: false,
-            themeMode: ThemeMode.system,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: FoodMelaaColors.riderPrimary,
-          primary: FoodMelaaColors.riderPrimary,
-          secondary: FoodMelaaColors.primary,
-        ),
-        textTheme: GoogleFonts.interTextTheme(),
-        scaffoldBackgroundColor: FoodMelaaColors.background,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: FoodMelaaColors.textDark,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          titleTextStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: FoodMelaaColors.textDark),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: FoodMelaaColors.riderPrimary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-          ),
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: FoodMelaaColors.riderPrimary,
-          brightness: Brightness.dark,
-          primary: FoodMelaaColors.riderPrimary,
-          secondary: FoodMelaaColors.primary,
-        ),
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-        scaffoldBackgroundColor: const Color(0xFF0F1115),
-        appBarTheme: AppBarTheme(
-          backgroundColor: const Color(0xFF0F1115),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          titleTextStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
-        ),
-      ),
+      themeMode: riderThemeState.mode,
+      theme: RiderTheme.light(),
+      darkTheme: RiderTheme.dark(),
       home: const _AuthGateAlt(),
     );
   }
@@ -115,26 +90,34 @@ class _AuthGateAltState extends State<_AuthGateAlt> {
   }
 
   Future<void> _checkSession() async {
-    final session = await RiderAuthService.instance.getSession();
-    if (session != null && session['uid']!.isNotEmpty) {
-      try {
-        if (FirebaseAuth.instance.currentUser == null) {
-          await FirebaseAuth.instance.authStateChanges()
-              .firstWhere((u) => u != null)
-              .timeout(const Duration(seconds: 3));
-        }
-      } catch (_) {}
+    // Trust the saved session from SharedPreferences FIRST.
+    // This survives app kills and never blocks on Firebase auth state.
+    var session = await RiderAuthService.instance.getSession();
 
-      setState(() {
-        _isLoggedIn = true;
-        _riderData = session;
-        _loading = false;
-      });
+    if (session != null && session['uid']!.isNotEmpty) {
+      RiderAuthService.refreshFirestoreToken().ignore();
+      if (!mounted) return;
+      setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
+      return;
+    }
+
+    // No saved session — try to recover from Firebase Auth.
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance
+            .authStateChanges()
+            .firstWhere((u) => u != null)
+            .timeout(const Duration(seconds: 4));
+      }
+    } catch (_) {}
+
+    session = await RiderAuthService.instance.recoverSessionFromFirebase();
+    if (!mounted) return;
+    if (session != null && session['uid']!.isNotEmpty) {
+      RiderAuthService.refreshFirestoreToken().ignore();
+      setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
     } else {
-      setState(() {
-        _isLoggedIn = false;
-        _loading = false;
-      });
+      setState(() { _isLoggedIn = false; _loading = false; });
     }
   }
 
@@ -143,7 +126,9 @@ class _AuthGateAltState extends State<_AuthGateAlt> {
     if (_loading) {
       return Scaffold(
         backgroundColor: FoodMelaaColors.background,
-        body: Center(child: CircularProgressIndicator(color: FoodMelaaColors.riderPrimary)),
+        body: Center(
+            child:
+                CircularProgressIndicator(color: FoodMelaaColors.riderPrimary)),
       );
     }
     if (_isLoggedIn) return RiderDashboardScreen(riderData: _riderData);

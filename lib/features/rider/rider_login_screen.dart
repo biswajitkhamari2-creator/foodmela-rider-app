@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -26,7 +25,8 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _askPermissionUpfront());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _askPermissionUpfront());
   }
 
   Future<void> _askPermissionUpfront() async {
@@ -66,7 +66,9 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
             'Without this, orders come as silent notifications only.\n\n'
             'Tap ALLOW to switch it ON.',
             style: TextStyle(
-                fontSize: 14, height: 1.6, color: Colors.white.withValues(alpha: 0.7)),
+                fontSize: 14,
+                height: 1.6,
+                color: Colors.white.withValues(alpha: 0.7)),
           ),
           actions: [
             TextButton(
@@ -82,7 +84,8 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                 backgroundColor: const Color(0xFFD4AF37),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -102,13 +105,25 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
   Future<void> _signIn() async {
     final id = _identifierCtrl.text.trim();
     final pw = _passwordCtrl.text;
-    if (id.isEmpty) { setState(() => _error = 'Please enter email or phone number'); return; }
-    if (pw.isEmpty) { setState(() => _error = 'Please enter password'); return; }
+    if (id.isEmpty) {
+      setState(() => _error = 'Please enter email or phone number');
+      return;
+    }
+    if (pw.isEmpty) {
+      setState(() => _error = 'Please enter password');
+      return;
+    }
 
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final rider = await RiderAuthService.instance.login(identifier: id, password: pw);
-      try { await FirebaseService.subscribeToRiderNotifications(); } catch (_) {}
+      final rider =
+          await RiderAuthService.instance.login(identifier: id, password: pw);
+      try {
+        await FirebaseService.subscribeToRiderNotifications();
+      } catch (_) {}
       if (!mounted) return;
       try {
         final allowed = await NativeOrderAlert.canUseFullScreenIntent();
@@ -143,7 +158,9 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                 'full screen with ACCEPT / REJECT, even when the app is closed.\n\n'
                 'Tap ALLOW on the next screen to switch it ON.',
                 style: TextStyle(
-                    fontSize: 14, height: 1.6, color: Colors.white.withValues(alpha: 0.7)),
+                    fontSize: 14,
+                    height: 1.6,
+                    color: Colors.white.withValues(alpha: 0.7)),
               ),
               actions: [
                 TextButton(
@@ -159,7 +176,8 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                     backgroundColor: const Color(0xFFD4AF37),
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -179,7 +197,8 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => RiderDashboardScreen(riderData: rider),
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              RiderDashboardScreen(riderData: rider),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
@@ -190,15 +209,27 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
         SnackBar(
           backgroundColor: const Color(0xFF8C5E00),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: Text('Welcome, ${rider['name'] ?? 'Partner'}!',
-              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
         ),
       );
     } on RiderAuthException catch (e) {
-      if (mounted) setState(() { _error = e.message; _loading = false; });
+      if (mounted)
+        setState(() {
+          _error = e.message;
+          _loading = false;
+        });
     } catch (e) {
-      if (mounted) setState(() { _error = 'Login failed. Please try again'; _loading = false; });
+      if (mounted)
+        setState(() {
+          _error = 'Login failed. Please try again';
+          _loading = false;
+        });
     }
     if (mounted && _loading) setState(() => _loading = false);
   }
@@ -218,33 +249,40 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
     Widget? suffixIcon,
     TextInputType keyboardType = TextInputType.text,
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-          ),
-          child: TextField(
-            controller: controller,
-            obscureText: obscureText,
-            keyboardType: keyboardType,
-            style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
-            decoration: InputDecoration(
-              prefixIcon: Icon(prefixIcon, color: const Color(0xFFD4AF37), size: 22),
-              suffixIcon: suffixIcon,
-              hintText: hintText,
-              hintStyle: GoogleFonts.inter(fontSize: 14, color: Colors.white.withValues(alpha: 0.4)),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-            ),
-            onChanged: (_) { if (_error != null) setState(() => _error = null); },
-            onSubmitted: (_) => _signIn(),
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border:
+            Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        cursorColor: const Color(0xFFD4AF37),
+        style: GoogleFonts.poppins(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Colors.white),
+        decoration: InputDecoration(
+          prefixIcon:
+              Icon(prefixIcon, color: const Color(0xFFD4AF37), size: 22),
+          suffixIcon: suffixIcon,
+          hintText: hintText,
+          hintStyle:
+              GoogleFonts.inter(
+                  fontSize: 14, color: Colors.white.withValues(alpha: 0.45)),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
+        onChanged: (_) {
+          if (_error != null) setState(() => _error = null);
+        },
+        onSubmitted: (_) => _signIn(),
       ),
     );
   }
@@ -266,9 +304,14 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                 shape: BoxShape.circle,
                 color: const Color(0xFFD4AF37).withValues(alpha: 0.16),
               ),
-            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-             .scale(duration: const Duration(seconds: 4), begin: const Offset(1, 1), end: const Offset(1.2, 1.2))
-             .blur(),
+            )
+                .animate(
+                    onPlay: (controller) => controller.repeat(reverse: true))
+                .scale(
+                    duration: const Duration(seconds: 4),
+                    begin: const Offset(1, 1),
+                    end: const Offset(1.2, 1.2))
+                .blur(),
           ),
           Positioned(
             bottom: -50,
@@ -280,9 +323,14 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                 shape: BoxShape.circle,
                 color: const Color(0xFF8C5E00).withValues(alpha: 0.18),
               ),
-            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-             .scale(duration: const Duration(seconds: 5), begin: const Offset(1.2, 1.2), end: const Offset(1, 1))
-             .blur(),
+            )
+                .animate(
+                    onPlay: (controller) => controller.repeat(reverse: true))
+                .scale(
+                    duration: const Duration(seconds: 5),
+                    begin: const Offset(1.2, 1.2),
+                    end: const Offset(1, 1))
+                .blur(),
           ),
           SafeArea(
             child: SingleChildScrollView(
@@ -295,18 +343,21 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                     decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.05),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1))),
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                      icon: const Icon(Icons.arrow_back_rounded,
+                          color: Colors.white, size: 22),
                       onPressed: () => Navigator.maybePop(context),
                     ),
                   ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.2),
                   const SizedBox(height: 40),
-                  
+
                   // Brand Header — golden
                   Center(
                     child: Container(
-                      width: 90, height: 90,
+                      width: 90,
+                      height: 90,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                             colors: [Color(0xFF8C5E00), Color(0xFFD4AF37)],
@@ -315,27 +366,44 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.5),
+                              color: const Color(0xFFD4AF37)
+                                  .withValues(alpha: 0.5),
                               blurRadius: 32,
                               offset: const Offset(0, 8))
                         ],
                       ),
-                      child: const Icon(Icons.delivery_dining_rounded, size: 44, color: Colors.white),
+                      child: const Icon(Icons.delivery_dining_rounded,
+                          size: 44, color: Colors.white),
                     ),
-                  ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack).fadeIn(),
+                  )
+                      .animate()
+                      .scale(duration: 600.ms, curve: Curves.easeOutBack)
+                      .fadeIn(),
                   const SizedBox(height: 24),
                   Center(
                     child: Text('FOOD MELA',
-                        style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFFD4AF37), letterSpacing: 1.5)),
-                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2).shimmer(delay: 1000.ms, duration: 1500.ms, color: Colors.white.withValues(alpha: 0.5)),
+                        style: GoogleFonts.poppins(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFD4AF37),
+                            letterSpacing: 1.5)),
+                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2).shimmer(
+                      delay: 1000.ms,
+                      duration: 1500.ms,
+                      color: Colors.white.withValues(alpha: 0.5)),
                   Center(
                     child: Text('Delivery Partner',
-                        style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white)),
+                        style: GoogleFonts.poppins(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white)),
                   ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2),
                   const SizedBox(height: 8),
                   Center(
                     child: Text('Sign in to start delivering',
-                        style: GoogleFonts.inter(fontSize: 14, color: Colors.white.withValues(alpha: 0.5))),
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.5))),
                   ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2),
                   const SizedBox(height: 40),
 
@@ -343,7 +411,11 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Email or Phone Number', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.9))),
+                      Text('Email or Phone Number',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.9))),
                       const SizedBox(height: 10),
                       _buildGlassField(
                         controller: _identifierCtrl,
@@ -352,7 +424,11 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                       ),
                       const SizedBox(height: 20),
-                      Text('Password', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.9))),
+                      Text('Password',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.9))),
                       const SizedBox(height: 10),
                       _buildGlassField(
                         controller: _passwordCtrl,
@@ -360,7 +436,12 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                         prefixIcon: Icons.lock_rounded,
                         obscureText: _obscure,
                         suffixIcon: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.white.withValues(alpha: 0.4), size: 22),
+                          icon: Icon(
+                              _obscure
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              color: Colors.white.withValues(alpha: 0.55),
+                              size: 22),
                           onPressed: () => setState(() => _obscure = !_obscure),
                         ),
                       ),
@@ -375,15 +456,25 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
                         ? Padding(
                             padding: const EdgeInsets.only(top: 16),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
-                                  color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                                  color: const Color(0xFFEF4444)
+                                      .withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3))),
+                                  border: Border.all(
+                                      color: const Color(0xFFEF4444)
+                                          .withValues(alpha: 0.3))),
                               child: Row(children: [
-                                const Icon(Icons.error_outline_rounded, size: 20, color: Color(0xFFEF4444)),
+                                const Icon(Icons.error_outline_rounded,
+                                    size: 20, color: Color(0xFFEF4444)),
                                 const SizedBox(width: 12),
-                                Expanded(child: Text(_error!, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFFEF4444)))),
+                                Expanded(
+                                    child: Text(_error!,
+                                        style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFFEF4444)))),
                               ]),
                             ),
                           )
@@ -394,35 +485,57 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
 
                   // Submit Button — golden
                   SizedBox(
-                    width: double.infinity, height: 56,
+                    width: double.infinity,
+                    height: 56,
                     child: ElevatedButton(
                       onPressed: _loading ? null : _signIn,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        disabledBackgroundColor: Colors.white.withValues(alpha: 0.1),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        disabledBackgroundColor:
+                            Colors.white.withValues(alpha: 0.1),
                         elevation: 8,
-                        shadowColor: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                        shadowColor:
+                            const Color(0xFFD4AF37).withValues(alpha: 0.4),
                       ),
                       child: _loading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2.5, color: Colors.white))
                           : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('SIGN IN', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1.5)),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-                            ],
-                          ),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('SIGN IN',
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: 1.5)),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward_rounded,
+                                    color: Colors.white, size: 20),
+                              ],
+                            ),
                     ),
-                  ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-                   .shimmer(delay: 2.seconds, duration: 2.seconds, color: Colors.white.withValues(alpha: 0.2)),
+                  )
+                      .animate(
+                          onPlay: (controller) =>
+                              controller.repeat(reverse: true))
+                      .shimmer(
+                          delay: 2.seconds,
+                          duration: 2.seconds,
+                          color: Colors.white.withValues(alpha: 0.2)),
 
                   const SizedBox(height: 24),
                   Center(
                     child: Text(
                       'Contact Admin to reset your password.',
-                      style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withValues(alpha: 0.4)),
+                      style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.4)),
                       textAlign: TextAlign.center,
                     ),
                   ).animate().fadeIn(delay: 700.ms),

@@ -170,19 +170,19 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
                                   color: Colors.white.withValues(alpha: 0.16),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Icon(Icons.account_balance_wallet_rounded, color: _isDark ? const Color(0xFF1C1813) : Colors.white, size: 20),
+                                child: Icon(Icons.account_balance_wallet_rounded, color: const Color(0xFF2B2118), size: 20),
                               ),
                               const SizedBox(width: 10),
                               Text('AVAILABLE BALANCE',
-                                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white70, letterSpacing: 1.0)),
+                                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF5A4310), letterSpacing: 1.0)),
                             ],
                           ),
                           const SizedBox(height: 12),
                           Text('₹${_available.toInt()}',
-                              style: GoogleFonts.poppins(fontSize: 44, fontWeight: FontWeight.w800, color: _isDark ? const Color(0xFF1C1813) : Colors.white, height: 1)),
+                              style: GoogleFonts.poppins(fontSize: 44, fontWeight: FontWeight.w800, color: const Color(0xFF2B2118), height: 1)),
                           const SizedBox(height: 6),
                           Text('$_deliveredCount deliveries × ₹40',
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+                              style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF5A4310))),
                           const SizedBox(height: 18),
                           Row(
                             children: [
@@ -277,9 +277,9 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
   Widget _heroStat(String label, String value) {
     return Column(
       children: [
-        Text(label, style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white60, letterSpacing: 0.8)),
+        Text(label, style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: const Color(0xFF5A4310), letterSpacing: 0.8)),
         const SizedBox(height: 2),
-        Text(value, style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+        Text(value, style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF2B2118))),
       ],
     );
   }

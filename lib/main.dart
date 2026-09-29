@@ -137,35 +137,50 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Future<void> _checkSession() async {
-    final session = await RiderAuthService.instance.getSession();
+    // Step 1: Read the saved session from SharedPreferences FIRST.
+    // SharedPreferences survives app kills and cache clears.
+    var session = await RiderAuthService.instance.getSession();
+
     if (session != null && session['uid']!.isNotEmpty) {
-      // Trust the saved session — NEVER auto-logout on startup. A forced
-      // token refresh (getIdToken(true)) fails on devices with broken /
-      // outdated Play services and wrongly kicks riders to login. Firebase
-      // Auth persists its own user; Firestore reads will surface any real
-      // auth problem naturally.
-      
-      // Fix persistence race condition: wait for Firebase Auth to finish
-      // restoring the user in the background before mounting the dashboard
-      // and attaching the Firestore stream, otherwise it fails with permission-denied.
+      // Step 1a: SYNCHRONOUSLY restore Firebase auth BEFORE showing dashboard.
+      // This prevents a race where Firestore queries start before auth is ready.
+      // Wait for Firebase to restore the persisted email+password session OR
+      // allow refreshFirestoreToken to re-sign in if needed.
       try {
         if (FirebaseAuth.instance.currentUser == null) {
           await FirebaseAuth.instance.authStateChanges()
               .firstWhere((u) => u != null)
-              .timeout(const Duration(seconds: 3));
+              .timeout(const Duration(seconds: 2));
         }
       } catch (_) {}
-      // Silent session repair: the backend apiToken is HMAC-signed and
-      // expires after 7 days. A present-but-dead token makes every orders
-      // read fail with permission-denied (looks like an "auto logout").
-      // Re-mint from the live Firebase session so the rider stays logged in
-      // until they explicitly press Logout. Never clears the saved session.
-      try {
-        await RiderAuthService.refreshFirestoreToken();
-      } catch (_) {}
 
+      // Step 1b: Refresh the Firestore token BEFORE showing dashboard.
+      // This ensures orders stream starts with valid auth.
+      final refreshOk = await RiderAuthService.refreshFirestoreToken();
+      if (refreshOk) {
+        if (mounted) setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
+        return;
+      }
+
+      // If refresh failed, fall through to Firebase recovery attempt.
+    }
+
+    // Step 2: No SharedPreferences session OR refresh failed — try to recover from Firebase Auth
+    // (covers first launch after Firebase persists the user but before our
+    // SharedPreferences has been written, e.g. login mid-network-drop).
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.authStateChanges()
+            .firstWhere((u) => u != null)
+            .timeout(const Duration(seconds: 4));
+      }
+    } catch (_) {}
+
+    session = await RiderAuthService.instance.recoverSessionFromFirebase();
+    if (session != null && session['uid']!.isNotEmpty) {
       if (mounted) setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
     } else {
+      // Genuinely not logged in — show login screen.
       if (mounted) setState(() { _isLoggedIn = false; _loading = false; });
     }
   }

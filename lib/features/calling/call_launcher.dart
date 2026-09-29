@@ -77,17 +77,19 @@ class CallLauncher {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getString('rider_api_token') ?? '';
       if (stored.isEmpty || !await RiderAuthService.probeCallToken(stored)) {
-        final user = FirebaseAuth.instance.currentUser;
+        var user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          try {
+            user = await FirebaseAuth.instance
+                .authStateChanges()
+                .firstWhere((u) => u != null)
+                .timeout(const Duration(seconds: 3));
+          } catch (_) {}
+        }
+        user ??= FirebaseAuth.instance.currentUser;
         final phone = prefs.getString('rider_phone') ?? '';
         if (user != null && phone.isNotEmpty) {
-          final repaired = await RiderAuthService.refreshFirestoreToken();
-          if (!repaired) {
-            messenger.showSnackBar(_callSnack('Session expired — please logout and login again, then retry the call'));
-            return;
-          }
-        } else {
-          messenger.showSnackBar(_callSnack('Session expired — please logout and login again, then retry the call'));
-          return;
+          await RiderAuthService.refreshFirestoreToken();
         }
       }
     } catch (_) {}

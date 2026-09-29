@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/utils/routes.dart';
 import 'package:food_track/features/rider/rider_login_screen.dart';
+import 'package:food_track/core/services/rider_auth_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -291,12 +292,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey))),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              Navigator.pushNamedAndRemoveUntil(context, AppRoutes.welcome, (route) => false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Logged out successfully 👋')),
-              );
+              await RiderAuthService.instance.logout();
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, AppRoutes.welcome, (route) => false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Logged out successfully 👋')),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: Text('LOGOUT 🚪', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),

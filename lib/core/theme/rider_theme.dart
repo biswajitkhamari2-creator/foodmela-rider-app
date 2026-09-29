@@ -21,7 +21,18 @@ class RiderTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      textTheme: GoogleFonts.interTextTheme(),
+      // TextField inherits its entered-value style from the ambient text theme.
+      // Keep that default explicit so system brightness and M3 defaults cannot
+      // turn values pale on the light input surfaces used throughout the app.
+      textTheme: GoogleFonts.interTextTheme().apply(
+        bodyColor: FoodMelaaColors.textDark,
+        displayColor: FoodMelaaColors.textDark,
+      ),
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: FoodMelaaColors.riderPrimaryDark,
+        selectionColor: Color(0x66D4AF37),
+        selectionHandleColor: FoodMelaaColors.riderPrimaryDark,
+      ),
       scaffoldBackgroundColor: FoodMelaaColors.background,
       appBarTheme: AppBarTheme(
         backgroundColor: FoodMelaaColors.riderPrimary,
@@ -29,17 +40,15 @@ class RiderTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         titleTextStyle: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.white),
+            fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
       ),
       cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 4,
         shadowColor: FoodMelaaColors.riderPrimaryDark.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: FoodMelaaColors.borderLight, width: 1),
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: FoodMelaaColors.borderLight, width: 1),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -56,8 +65,8 @@ class RiderTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: FoodMelaaColors.riderPrimary,
-          side: const BorderSide(
-              color: FoodMelaaColors.riderPrimary, width: 1.2),
+          side:
+              const BorderSide(color: FoodMelaaColors.riderPrimary, width: 1.2),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(_radius)),
           textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
@@ -72,7 +81,7 @@ class RiderTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        hintStyle: GoogleFonts.inter(color: FoodMelaaColors.textGrey),
+        hintStyle: GoogleFonts.inter(color: FoodMelaaColors.textSecondary),
         labelStyle: GoogleFonts.inter(color: FoodMelaaColors.textSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(_radius),
@@ -80,12 +89,13 @@ class RiderTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(_radius),
-          borderSide: const BorderSide(color: FoodMelaaColors.borderLight, width: 1),
+          borderSide:
+              const BorderSide(color: FoodMelaaColors.borderLight, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(_radius),
-          borderSide: const BorderSide(
-              color: FoodMelaaColors.riderPrimary, width: 2),
+          borderSide:
+              const BorderSide(color: FoodMelaaColors.riderPrimary, width: 2),
         ),
       ),
       chipTheme: ChipThemeData(
@@ -104,19 +114,16 @@ class RiderTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(28))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((s) =>
@@ -149,7 +156,15 @@ class RiderTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+      textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).apply(
+        bodyColor: FoodMelaaColors.riderDarkText,
+        displayColor: FoodMelaaColors.riderDarkText,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: gold,
+        selectionColor: gold.withValues(alpha: 0.35),
+        selectionHandleColor: gold,
+      ),
       scaffoldBackgroundColor: FoodMelaaColors.riderDarkSurface,
       appBarTheme: AppBarTheme(
         backgroundColor: FoodMelaaColors.riderDarkCard,
@@ -157,9 +172,7 @@ class RiderTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         titleTextStyle: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: gold),
+            fontSize: 16, fontWeight: FontWeight.w700, color: gold),
       ),
       cardTheme: CardThemeData(
         color: FoodMelaaColors.riderDarkCard,
@@ -199,10 +212,10 @@ class RiderTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: FoodMelaaColors.riderDarkCard,
-        hintStyle: GoogleFonts.inter(
-            color: FoodMelaaColors.riderDarkTextSecondary),
-        labelStyle: GoogleFonts.inter(
-            color: FoodMelaaColors.riderDarkTextSecondary),
+        hintStyle:
+            GoogleFonts.inter(color: FoodMelaaColors.riderDarkTextSecondary),
+        labelStyle:
+            GoogleFonts.inter(color: FoodMelaaColors.riderDarkTextSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(_radius),
           borderSide: BorderSide.none,
@@ -232,19 +245,16 @@ class RiderTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: FoodMelaaColors.riderDarkCard,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: FoodMelaaColors.riderDarkCard,
         shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(28))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: FoodMelaaColors.riderDarkCard,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((s) =>

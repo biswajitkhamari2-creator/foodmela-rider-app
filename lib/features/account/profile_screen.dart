@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/theme/app_colors.dart';
 import 'package:food_track/core/utils/routes.dart';
+import 'package:food_track/core/services/rider_auth_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -67,11 +68,14 @@ class ProfileScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      AppRoutes.welcome,
-                      (route) => false,
-                    );
+                  onPressed: () async {
+                    await RiderAuthService.instance.logout();
+                    if (context.mounted) {
+                      Navigator.of(context).pushNamedAndRemoveUntil(
+                        AppRoutes.welcome,
+                        (route) => false,
+                      );
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red, width: 1.5),

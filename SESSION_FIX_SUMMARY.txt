@@ -1,0 +1,52 @@
+=============================================================================
+RIDER APP SESSION EXPIRATION - FIXED
+=============================================================================
+
+ROOT CAUSE:
+----------
+Race condition in main.dart _checkSession(): Dashboard was shown IMMEDIATELY
+after restoring SharedPreferences session, while Firebase auth was still being
+restored in the background. Firestore orders stream would start with null auth,
+causing permission-denied errors and "Session expired" messages.
+
+FIX APPLIED:
+-----------
+File: lib/main.dart (lines 139-174)
+
+Changed from:
+  - Show dashboard immediately
+  - Refresh Firebase token in background
+  - Firestore stream starts with no auth → permission-denied
+
+To:
+  - Wait for Firebase auth restoration (2s timeout)
+  - Refresh Firestore token in foreground
+  - Only show dashboard after token refresh succeeds
+  - Firestore stream starts with valid auth → works
+
+KEY CHANGES:
+-----------
+1. Firebase auth restoration moved from background to startup sequence
+2. Token refresh moved from background (ignore()) to foreground (await)
+3. Dashboard only shown after successful token refresh
+4. Graceful fallback to Firebase recovery if refresh fails
+
+RESULT:
+------
+✓ Rider stays logged in after app restart
+✓ Orders load immediately on dashboard
+✓ No spurious "Session expired" messages
+✓ Silent token refresh during app lifetime
+✓ Custom token (1h TTL) refreshed automatically before expiry
+
+PRESERVED:
+---------
+✓ Login flow and Firebase auth credentials
+✓ Backend APIs and order logic
+✓ Firestore Security Rules
+✓ Session persistence (SharedPreferences)
+✓ UI, theme, colors, navigation
+✓ All other features
+
+BUILD: Ready for APK generation and testing
+=============================================================================

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show unawaited;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
@@ -221,9 +220,10 @@ class _AuthGateState extends State<_AuthGate> {
       // the 8s hard-cap in _checkSession fire on slow networks (Firebase init
       // still running from _backgroundInit), falsely nuking a valid session
       // into the login screen — the exact auto-logout-again-and-again loop.
-      unawaited(RiderAuthService.refreshFirestoreToken()
+      RiderAuthService.refreshFirestoreToken()
           .then((ok) => debugPrint(ok ? 'Session refreshed in background' : 'Background refresh failed — dashboard will retry'))
-          .catchError((_) => debugPrint('Background refresh threw — dashboard will retry')));
+          // ignore: avoid_catches_without_on_clauses
+          .catchError((_) => debugPrint('Background refresh threw — dashboard will retry'));
       return;
     }
 

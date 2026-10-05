@@ -10,6 +10,7 @@
 //     peerLabel: 'Assigned Rider',       // or 'Customer'
 //   );
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +35,9 @@ SnackBar _callSnack(String msg) => SnackBar(
 class CallLauncher {
   CallLauncher._();
 
+  /// Re-entrancy guard: rapid multi-taps must not stack call screens.
+  static bool _placing = false;
+
   static Future<void> placeCall({
     required BuildContext context,
     required String orderId,
@@ -41,6 +45,9 @@ class CallLauncher {
     required String myRole,
     required String peerLabel,
   }) async {
+    if (_placing) return;
+    _placing = true;
+    try {
     if (!context.mounted) return;
     final earlyMessenger = ScaffoldMessenger.of(context);
     if (!CallConfig.isConfigured) {
@@ -51,6 +58,16 @@ class CallLauncher {
     if (myId.isEmpty) {
       earlyMessenger.showSnackBar(
           const SnackBar(content: Text('Please login first to place a call')));
+      return;
+    }
+
+    // Pre-call stage guard: delivered/cancelled orders can't ring anyone.
+    // Backend enforces the same rule — this is the instant UX-side check.
+    if (!await _orderCallable(orderId)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(_callSnack('Order completed — calling disabled'));
+      }
       return;
     }
 
@@ -172,6 +189,9 @@ class CallLauncher {
       debugPrint('📞 CALL ERROR RAW: $e');
       messenger.showSnackBar(_callSnack(_friendlyError(e)));
     }
+    } finally {
+      _placing = false;
+    }
   }
 
   // ── Receiver side: accept an invite ──
@@ -217,6 +237,27 @@ class CallLauncher {
   }
 
   // ── internals ──
+  /// True when the order is still active (stage 0-2, not cancelled).
+  /// Fail-open: if the doc can't be read, let the backend decide.
+  static Future<bool> _orderCallable(String orderId) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(orderId)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 5));
+      if (!snap.exists || snap.data() == null) return true;
+      final d = snap.data()!;
+      final stage = (d['stage'] as num?)?.toInt() ?? 0;
+      final status = (d['status'] as String? ?? '').toLowerCase();
+      if (stage >= 3 || stage == -1) return false;
+      if (status.contains('cancel') || status.contains('deliver')) return false;
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static Future<bool?> _waitForAnswer(CallInvite invite) {
     final completer = Completer<bool?>();
     late StreamSubscription sub;
@@ -247,6 +288,7 @@ class CallLauncher {
       return 'Session expired — please logout and login again, then retry the call';
     }
     if (m.contains('must be your own')) return 'Authentication error — please logout and login again';
+    if (m.contains('Order completed')) return 'Order completed — calling disabled';
     if (m.contains('Not part of this order')) return 'Only the assigned customer & rider can call on this order';
     if (m.contains('not active')) return 'Calling is available only while the order is active';
     if (m.contains('No rider assigned')) return 'No delivery partner assigned yet — cannot call';

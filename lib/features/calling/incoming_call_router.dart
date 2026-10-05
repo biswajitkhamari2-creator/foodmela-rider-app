@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'call_launcher.dart';
 import 'call_models.dart';
 import 'call_service.dart';
+import 'incoming_call_guard.dart';
 import 'incoming_call_screen.dart';
 
 /// ─── INCOMING CALL ROUTER ───────────────────────────────────────────────────
@@ -49,7 +50,7 @@ class IncomingCallRouter {
         CallInvite(
           callId: callId,
           orderId: orderId,
-          channelName: 'fm_$orderId',
+          channelName: 'order_$orderId',
           callerId: '',
           callerRole: callerRole.isNotEmpty ? callerRole : 'customer',
           receiverId: myId,
@@ -59,11 +60,13 @@ class IncomingCallRouter {
         );
 
     if (resolved.status != CallStatus.ringing) return; // ended/missed already
+    if (!IncomingCallGuard.shouldShow(resolved.callId)) return;
     nav.push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => IncomingCallScreen(
         orderId: resolved.orderId,
         callerLabel: resolved.callerLabel,
+        callId: resolved.callId,
         onAccept: () {
           nav.pop();
           final ctx = navigatorKey?.currentContext;

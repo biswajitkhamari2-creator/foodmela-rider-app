@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:food_track/core/services/order_ringtone_service.dart';
 import 'call_models.dart';
 import 'call_service.dart';
+import 'incoming_call_guard.dart';
 
 class IncomingCallScreen extends StatefulWidget {
   final String orderId;
@@ -68,6 +69,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   void dispose() {
     _watch?.cancel();
     OrderRingtoneService.stopRinging(_ringKey);
+    IncomingCallGuard.dismissed(widget.callId);
     _pulse.dispose();
     super.dispose();
   }

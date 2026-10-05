@@ -31,7 +31,7 @@ class FoodMelaState extends ChangeNotifier {
   final List<Map<String, dynamic>> _pastOrders = [];   // NEVER deleted
 
   // ── Address ───────────────────────────────────────────────────────────────────
-  String _selectedAddress = '📍 Saheed Nagar, Bhubaneswar, Odisha 751007';
+  String _selectedAddress = '📍 Birmaharajpur, Subarnapur, Odisha 767018';
   bool _isDetectingLocation = false;
   final List<Map<String, String>> _savedAddresses = [];
 
@@ -330,7 +330,7 @@ class FoodMelaState extends ChangeNotifier {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _selectedAddress = '📍 Saheed Nagar, Bhubaneswar, Odisha 751007';
+        _selectedAddress = '📍 Birmaharajpur, Subarnapur, Odisha 767018';
         _isDetectingLocation = false;
         notifyListeners();
         return;
@@ -350,10 +350,10 @@ class FoodMelaState extends ChangeNotifier {
         );
         _selectedAddress = '📍 Current Location (${position.latitude.toStringAsFixed(3)}, ${position.longitude.toStringAsFixed(3)})';
       } else {
-        _selectedAddress = '📍 Saheed Nagar, Bhubaneswar, Odisha 751007';
+        _selectedAddress = '📍 Birmaharajpur, Subarnapur, Odisha 767018';
       }
     } catch (_) {
-      _selectedAddress = '📍 Saheed Nagar, Bhubaneswar, Odisha 751007';
+      _selectedAddress = '📍 Birmaharajpur, Subarnapur, Odisha 767018';
     } finally {
       _isDetectingLocation = false;
       notifyListeners();

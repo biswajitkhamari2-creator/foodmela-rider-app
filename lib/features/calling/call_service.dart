@@ -112,6 +112,25 @@ class CallService {
     );
   }
 
+  Future<List<DocumentReference<Map<String, dynamic>>>> _callOrderRefs(
+      String orderId) async {
+    final orders = _db.collection('orders');
+    final refs = <DocumentReference<Map<String, dynamic>>>[orders.doc(orderId)];
+    try {
+      final snap = await refs.first.get().timeout(const Duration(seconds: 6));
+      final alias = snap.data()?['orderId']?.toString().trim() ?? '';
+      if (alias.isNotEmpty && alias != orderId) {
+        final aliasRef = orders.doc(alias);
+        if ((await aliasRef.get().timeout(const Duration(seconds: 6))).exists) {
+          refs.add(aliasRef);
+        }
+      }
+    } catch (e) {
+      debugPrint('call order alias lookup notice: $e');
+    }
+    return refs;
+  }
+
   // ── Caller: create backend log + Firestore invite ──
   Future<CallInvite> startCall({
     required String orderId,
@@ -124,13 +143,28 @@ class CallService {
       label: 'call request',
     );
     final log = (body['log'] as Map<String, dynamic>?) ?? {};
+    final orderRefs = await _callOrderRefs(orderId);
+    var receiverId = (log['receiverId'] as String?) ?? '';
+    if (callerRole == 'rider' && receiverId.isEmpty) {
+      for (final ref in orderRefs) {
+        try {
+          final snap = await ref.get().timeout(const Duration(seconds: 4));
+          final d = snap.data();
+          final phone = (d?['phone'] ?? d?['customerPhone'] ?? '').toString().trim();
+          if (phone.isNotEmpty) {
+            receiverId = phone;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
     final invite = CallInvite(
       callId: (body['callId'] as String?) ?? '',
       orderId: orderId,
       channelName: (body['channelName'] as String?) ?? 'order_$orderId',
       callerId: callerId,
       callerRole: callerRole,
-      receiverId: (log['receiverId'] as String?) ?? '',
+      receiverId: receiverId,
       receiverRole: callerRole == 'customer' ? 'rider' : 'customer',
       status: CallStatus.ringing,
       createdAt: DateTime.now(),
@@ -140,7 +174,10 @@ class CallService {
     // writes are allowed. One active call per order; a new call overwrites.
     final signalMap = invite.toMap()..['callId'] = invite.callId;
     await _writeWithRetry(
-      () => _db.collection('orders').doc(orderId).update({'activeCall': signalMap}),
+      () async {
+        await Future.wait(
+            orderRefs.map((ref) => ref.update({'activeCall': signalMap})));
+      },
       label: 'call invite write',
     );
     // Backup path: incoming-call FCM push (covers background/killed app).
@@ -195,8 +232,34 @@ class CallService {
       if (m == null) return <CallInvite>[];
       final callId = (m['callId'] as String?) ?? '';
       if (callId.isEmpty) return <CallInvite>[];
-      if ((m['receiverId'] as String?) != myId) return <CallInvite>[];
       if ((m['status'] as String?) != 'ringing') return <CallInvite>[];
+
+      final recId = (m['receiverId'] as String?) ?? '';
+      final recRole = (m['receiverRole'] as String?) ?? '';
+      final callerRole = (m['callerRole'] as String?) ?? '';
+      final callerId = (m['callerId'] as String?) ?? '';
+
+      // Rider app: never treat our own outgoing call as incoming
+      if (callerRole == 'rider') return <CallInvite>[];
+
+      final myClean = myId.replaceAll(RegExp(r'[^0-9]'), '');
+      final my10 = myClean.length >= 10 ? myClean.substring(myClean.length - 10) : myClean;
+      final callerClean = callerId.replaceAll(RegExp(r'[^0-9]'), '');
+      final caller10 = callerClean.length >= 10 ? callerClean.substring(callerClean.length - 10) : callerClean;
+
+      if (callerId == myId || (my10.isNotEmpty && caller10.isNotEmpty && caller10 == my10)) {
+        return <CallInvite>[];
+      }
+
+      final recClean = recId.replaceAll(RegExp(r'[^0-9]'), '');
+      final rec10 = recClean.length >= 10 ? recClean.substring(recClean.length - 10) : recClean;
+
+      final isMatch = recId == myId ||
+          (my10.isNotEmpty && rec10 == my10) ||
+          recRole == 'rider' ||
+          callerRole == 'customer';
+
+      if (!isMatch) return <CallInvite>[];
       return [CallInvite.fromDoc(callId, m)];
     });
   }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
@@ -23,7 +24,7 @@ class RiderAuthService {
   static const _kRiderName = 'rider_name';
   static const _kRiderPartnerId = 'rider_partner_id';
   static const _kRiderApiToken = 'rider_api_token';
-  // Saved so we can silently re-sign-in when the custom token expires
+  static const _kRiderIdentifier = 'rider_identifier';
   static const _kRiderPassword = 'rider_password';
 
   /// Backend rider apiToken (minted at login, bound to rider phone).
@@ -46,11 +47,13 @@ class RiderAuthService {
   }
 
   /// Exchange the Firebase ID token for a backend rider apiToken.
-  /// Returns true ONLY when the Firestore custom token was applied (orders
-  /// will stream). Returns false when the backend rejected the account
-  /// (phone-keyed doc, unapproved, blocked…) — the caller must NOT let the
-  /// user in, otherwise every orders read dies with permission-denied and the
-  /// dashboard shows "Session expired" on every order arrival.
+  /// Saves the apiToken (what /api/orders/* + /api/calls/* need) and returns
+  /// true. Returns false when the backend rejects or is unreachable — the
+  /// caller must DEGRADE (enter dashboard, retry silently), never sign out a
+  /// good Firebase session over a backend blip.
+  /// Never touches the Firebase session: signInWithCustomToken used to replace
+  /// the durable email/password session with a 1-hour token that did not
+  /// survive app kill, logging riders out on every restart.
   static Future<bool> _mintRiderToken(User user, {String phone = ''}) async {
     try {
       final idToken = await user.getIdToken();
@@ -67,16 +70,7 @@ class RiderAuthService {
       final t = (b['apiToken'] as String?) ?? '';
       if (t.isEmpty) return false;
       (await SharedPreferences.getInstance()).setString(_kRiderApiToken, t);
-      // Firestore sign-in with the backend-minted custom token so the
-      // hardened rules (isRider → users/{uid} role) let orders stream in.
-      final ft = (b['firebaseToken'] as String?) ?? '';
-      if (ft.isEmpty) return false;
-      try {
-        await FirebaseAuth.instance.signInWithCustomToken(ft);
-      } catch (_) {
-        if (FirebaseAuth.instance.currentUser != null) return true;
-        return false;
-      }
+      try { await user.getIdToken(true); } catch (_) {} // pull fresh claims (role=rider) so order reads pass rules
       return true;
     } catch (_) {
       return false;
@@ -102,32 +96,15 @@ class RiderAuthService {
     }
   }
 
-  /// One-time silent repair for a live session whose orders stream died with
-  /// permission-denied (e.g. logged in before the backend knew the phone-keyed
-  /// doc). Returns true when the stream can be re-attached.
+  /// Silent background repair: re-mint the backend apiToken for the durable
+  /// Firebase session (e.g. after the orders stream died with
+  /// permission-denied). Never signs in, never signs out, never clears prefs —
+  /// returns false on any failure and the caller retries later.
   static Future<bool> refreshFirestoreToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final phone = prefs.getString(_kRiderPhone) ?? '';
       var user = FirebaseAuth.instance.currentUser;
-
-      // If currentUser is null the custom token (1-hour TTL) has expired.
-      // Silently re-sign-in with the saved email+password so we get a
-      // long-lived refresh-token session back, then mint the backend token.
-      if (user == null) {
-        final email = prefs.getString(_kRiderEmail) ?? '';
-        final password = prefs.getString(_kRiderPassword) ?? '';
-        if (email.isNotEmpty && password.isNotEmpty) {
-          try {
-            final cred = await FirebaseAuth.instance
-                .signInWithEmailAndPassword(email: email, password: password)
-                .timeout(const Duration(seconds: 10));
-            user = cred.user;
-          } catch (_) {}
-        }
-      }
-
-      // Fallback: wait briefly for Firebase to restore session from disk
       if (user == null) {
         try {
           user = await FirebaseAuth.instance
@@ -277,33 +254,30 @@ class RiderAuthService {
 
     // ── Save session ─────────────────────────────────────────────────────
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kRiderIdentifier, phone.isNotEmpty ? phone : email);
+    await prefs.setString(_kRiderPassword, password);
     await prefs.setString(_kRiderUid, uid);
     await prefs.setString(_kRiderEmail, email);
     await prefs.setString(_kRiderPhone, data['phone'] as String? ?? phone);
     await prefs.setString(_kRiderName, data['name'] as String? ?? '');
     await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
-    // Save password so we can silently re-sign-in when the custom token
-    // (1-hour TTL) expires, without forcing the rider back to login screen.
-    await prefs.setString(_kRiderPassword, password);
-    // SECURITY: mint backend rider apiToken for /api/orders/* + /api/calls/*.
-    // HARD FAIL: if the Firestore custom token was not applied, orders will
-    // never stream (permission-denied on every read). Do NOT let the user in
-    // with a broken session — sign out with a clear message instead.
+    await prefs.remove(_kRiderApiToken);
+    // Mint backend rider apiToken for /api/orders/* + /api/calls/*. A mint
+    // failure (backend blip) must NOT sign out the good Firebase session —
+    // enter the dashboard and let it retry silently.
     final riderPhone = data['phone'] as String? ?? phone;
     final minted = await _mintRiderToken(signedInUser, phone: riderPhone);
     if (!minted) {
-      await _auth.signOut();
-      throw RiderAuthException('Could not verify rider account — please try login again');
+      refreshFirestoreToken().ignore();
     }
-    final activeUid = _auth.currentUser?.uid ?? uid;
-    await prefs.setString(_kRiderUid, activeUid);
+    await prefs.setString(_kRiderUid, uid);
     await prefs.setString(_kRiderEmail, email);
     await prefs.setString(_kRiderPhone, riderPhone);
     await prefs.setString(_kRiderName, data['name'] as String? ?? '');
     await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
 
     return {
-      'uid': activeUid,
+      'uid': uid,
       'email': email,
       'phone': riderPhone,
       'name': data['name'] as String? ?? '',
@@ -321,47 +295,91 @@ class RiderAuthService {
     await prefs.remove(_kRiderName);
     await prefs.remove(_kRiderPartnerId);
     await prefs.remove(_kRiderApiToken);
+    await prefs.remove(_kRiderIdentifier);
     await prefs.remove(_kRiderPassword);
+    await prefs.remove('rider_password');
   }
 
   Future<Map<String, String>?> getSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = prefs.getString(_kRiderUid);
-    if (uid == null || uid.isEmpty) return null;
-    return {
-      'uid': uid,
-      'email': prefs.getString(_kRiderEmail) ?? '',
-      'phone': prefs.getString(_kRiderPhone) ?? '',
-      'name': prefs.getString(_kRiderName) ?? '',
-      'partnerId': prefs.getString(_kRiderPartnerId) ?? '',
-    };
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = prefs.getString(_kRiderUid);
+      if (uid == null || uid.isEmpty) return null;
+      return {
+        'uid': uid,
+        'email': prefs.getString(_kRiderEmail) ?? '',
+        'phone': prefs.getString(_kRiderPhone) ?? '',
+        'name': prefs.getString(_kRiderName) ?? '',
+        'partnerId': prefs.getString(_kRiderPartnerId) ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, String>?> recoverSessionFromFirebase() async {
     var user = _auth.currentUser;
     if (user == null) {
+      // 🔄 Immediate Auto-reauthenticate if app process was killed & Firebase session cleared
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final savedId = prefs.getString(_kRiderIdentifier) ?? prefs.getString(_kRiderPhone) ?? prefs.getString(_kRiderEmail) ?? '';
+        final savedPw = prefs.getString(_kRiderPassword) ?? prefs.getString('rider_password') ?? '';
+        if (savedId.isNotEmpty && savedPw.isNotEmpty) {
+          final res = await login(identifier: savedId, password: savedPw);
+          return {
+            'uid': (res['uid'] as String?) ?? '',
+            'email': (res['email'] as String?) ?? '',
+            'phone': (res['phone'] as String?) ?? '',
+            'name': (res['name'] as String?) ?? '',
+            'partnerId': (res['partnerId'] as String?) ?? '',
+          };
+        }
+      } catch (e) {
+        debugPrint('Auto re-auth notice: $e');
+      }
       try {
         user = await _auth
             .authStateChanges()
             .firstWhere((u) => u != null)
-            .timeout(const Duration(seconds: 4));
+            .timeout(const Duration(seconds: 2));
       } catch (_) {}
     }
     user ??= _auth.currentUser;
     if (user == null) {
-      return getSession();
+      return await getSession();
     }
     try {
       DocumentSnapshot<Map<String, dynamic>> riderDoc =
-          await _db.collection('users').doc(user.uid).get();
+          await _db.collection('users').doc(user.uid).get()
+              .timeout(const Duration(seconds: 8));
       if (!riderDoc.exists && (user.email ?? '').isNotEmpty) {
         final q = await _db
             .collection('users')
             .where('email', isEqualTo: user.email!.toLowerCase())
             .where('role', isEqualTo: 'delivery_partner')
             .limit(1)
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 8));
         if (q.docs.isNotEmpty) riderDoc = q.docs.first;
+      }
+      // Rider accounts live at users/{10-digit-phone} — the uid doc and
+      // email query above both miss them. Fall back to the saved phone.
+      if (!riderDoc.exists) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final savedPhone = prefs.getString(_kRiderPhone) ?? '';
+          final digits = savedPhone.replaceAll(RegExp(r'[^0-9]'), '');
+          if (digits.length >= 10) {
+            final short = digits.substring(digits.length - 10);
+            riderDoc = await _db.collection('users').doc(short).get()
+                .timeout(const Duration(seconds: 8));
+            if (!riderDoc.exists && digits != short) {
+              riderDoc = await _db.collection('users').doc(digits).get()
+                  .timeout(const Duration(seconds: 8));
+            }
+          }
+        } catch (_) {}
       }
       if (!riderDoc.exists) {
         final s = await getSession();
@@ -369,11 +387,13 @@ class RiderAuthService {
         return null;
       }
       final data = riderDoc.data();
-      if (data == null || data['role'] != 'delivery_partner') return null;
+      if (data == null || data['role'] != 'delivery_partner') {
+        return await getSession();
+      }
       if (data['approvalStatus'] == 'pending' ||
           data['approvalStatus'] == 'rejected' ||
           data['accountStatus'] == 'blocked') {
-        return null;
+        return await getSession();
       }
 
       final email = (data['email'] as String? ?? user.email ?? '').toLowerCase();
@@ -395,7 +415,7 @@ class RiderAuthService {
         'partnerId': partnerId,
       };
     } catch (_) {
-      return getSession();
+      return await getSession();
     }
   }
 

@@ -15,11 +15,13 @@ const double _perDelivery = 40.0;
 class RiderWalletScreen extends StatefulWidget {
   final String riderId;
   final String riderName;
+  final Map<String, dynamic>? riderData;
 
   const RiderWalletScreen({
     super.key,
     required this.riderId,
     required this.riderName,
+    this.riderData,
   });
 
   @override
@@ -38,19 +40,58 @@ class _RiderWalletScreenState extends State<RiderWalletScreen> {
     _load();
   }
 
-  /// Same multi-shape ownership as the dashboard `_isMine`: the backend
-  /// accept mirror overwrites `riderId` with the token phone, so a
-  /// partnerId-only query undercounts post-mirror deliveries. Query stage 3
-  /// broadly and filter client-side (delivered volume per rider is small).
+  /// Multi-shape ownership check matching phone, partnerId, uid, email, or rider name.
   bool _isMine(Map<String, dynamic> data) {
-    final ids = <String>{
-      (data['riderId'] as String? ?? '').trim(),
-      (data['riderPartnerId'] as String? ?? '').trim(),
-      (data['riderPhone'] as String? ?? '').trim(),
-      (data['acceptedBy'] as String? ?? '').trim(),
-      (data['acceptedByPhone'] as String? ?? '').trim(),
+    final phone = (widget.riderData?['phone'] as String? ?? '').trim();
+    final email = (widget.riderData?['email'] as String? ?? '').trim();
+    final uid = (widget.riderData?['uid'] as String? ?? widget.riderData?['id'] as String? ?? '').trim();
+    final partnerId = (widget.riderData?['partnerId'] as String? ?? '').trim();
+
+    final myPhoneDigits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final myPhone10 = myPhoneDigits.length >= 10
+        ? myPhoneDigits.substring(myPhoneDigits.length - 10)
+        : myPhoneDigits;
+
+    final myKeys = <String>{
+      widget.riderId.trim().toLowerCase(),
+      widget.riderName.trim().toLowerCase(),
+      partnerId.toLowerCase(),
+      phone.toLowerCase(),
+      email.toLowerCase(),
+      uid.toLowerCase(),
+      if (myPhoneDigits.isNotEmpty) myPhoneDigits.toLowerCase(),
+      if (myPhone10.isNotEmpty) myPhone10.toLowerCase(),
     }..remove('');
-    return widget.riderId.isNotEmpty && ids.contains(widget.riderId);
+
+    final docRiderId = (data['riderId'] as String? ?? '').trim();
+    final docPartnerId = (data['riderPartnerId'] as String? ?? data['partnerId'] as String? ?? '').trim();
+    final docPhone = (data['riderPhone'] as String? ?? data['acceptedByPhone'] as String? ?? '').trim();
+    final docAcceptedBy = (data['acceptedBy'] as String? ?? '').trim();
+    final docRiderEmail = (data['riderEmail'] as String? ?? '').trim();
+    final docRiderName = (data['riderName'] as String? ?? data['driverName'] as String? ?? '').trim();
+    final docRiderUid = (data['riderUid'] as String? ?? data['uid'] as String? ?? '').trim();
+
+    final docPhoneDigits = docPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    final docPhone10 = docPhoneDigits.length >= 10
+        ? docPhoneDigits.substring(docPhoneDigits.length - 10)
+        : docPhoneDigits;
+
+    final docKeys = <String>{
+      docRiderId.toLowerCase(),
+      docPartnerId.toLowerCase(),
+      docPhone.toLowerCase(),
+      docAcceptedBy.toLowerCase(),
+      docRiderEmail.toLowerCase(),
+      docRiderName.toLowerCase(),
+      docRiderUid.toLowerCase(),
+      if (docPhoneDigits.isNotEmpty) docPhoneDigits.toLowerCase(),
+      if (docPhone10.isNotEmpty) docPhone10.toLowerCase(),
+    }..remove('');
+
+    for (final k in myKeys) {
+      if (docKeys.contains(k)) return true;
+    }
+    return false;
   }
 
   Future<void> _load() async {

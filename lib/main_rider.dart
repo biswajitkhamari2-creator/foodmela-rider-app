@@ -90,34 +90,57 @@ class _AuthGateAltState extends State<_AuthGateAlt> {
   }
 
   Future<void> _checkSession() async {
-    // Trust the saved session from SharedPreferences FIRST.
-    // This survives app kills and never blocks on Firebase auth state.
-    var session = await RiderAuthService.instance.getSession();
-
-    if (session != null && session['uid']!.isNotEmpty) {
-      RiderAuthService.refreshFirestoreToken().ignore();
-      if (!mounted) return;
-      setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
-      return;
-    }
-
-    // No saved session — try to recover from Firebase Auth.
+    // 1. Prefs session check — instant paint, never throws gate to login if saved
     try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance
-            .authStateChanges()
-            .firstWhere((u) => u != null)
-            .timeout(const Duration(seconds: 4));
+      final session = await RiderAuthService.instance.getSession();
+      debugPrint('[AUTHGATE] cold-start prefs uid=${session?['uid'] ?? 'EMPTY'}');
+      if (!mounted) return;
+      if (session != null && (session['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = session;
+          _loading = false;
+        });
+        if (FirebaseAuth.instance.currentUser == null) {
+          RiderAuthService.instance.recoverSessionFromFirebase().ignore();
+        } else {
+          RiderAuthService.refreshFirestoreToken().ignore();
+        }
+        return;
       }
     } catch (_) {}
-
-    session = await RiderAuthService.instance.recoverSessionFromFirebase();
-    if (!mounted) return;
-    if (session != null && session['uid']!.isNotEmpty) {
-      RiderAuthService.refreshFirestoreToken().ignore();
-      setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
-    } else {
-      setState(() { _isLoggedIn = false; _loading = false; });
+    // 2. Silent recovery / auto-reauthentication
+    try {
+      final recovered = await RiderAuthService.instance
+          .recoverSessionFromFirebase()
+          .timeout(const Duration(seconds: 15), onTimeout: () => null);
+      if (!mounted) return;
+      if (recovered != null && (recovered['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = recovered;
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    // 3. Ultimate fallback: check local session once more before login screen
+    try {
+      final fallbackSession = await RiderAuthService.instance.getSession();
+      if (mounted && fallbackSession != null && (fallbackSession['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = fallbackSession;
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isLoggedIn = false;
+        _loading = false;
+      });
     }
   }
 

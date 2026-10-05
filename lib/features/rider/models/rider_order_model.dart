@@ -188,18 +188,22 @@ class RiderOrderModel {
   }
 
   /// Formats timestamp or relative time.
+  /// All values normalized to LOCAL time — Firestore Timestamps, UTC ISO
+  /// strings and epoch millis otherwise render hours off (e.g. 2:13 AM).
+  static DateTime _toLocal(DateTime dt) => dt.isUtc ? dt.toLocal() : dt;
+
   static String formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return 'Just now';
     try {
       DateTime dt;
       if (timestamp is Timestamp) {
-        dt = timestamp.toDate();
+        dt = _toLocal(timestamp.toDate());
       } else if (timestamp is DateTime) {
-        dt = timestamp;
+        dt = _toLocal(timestamp);
       } else if (timestamp is String) {
-        dt = DateTime.tryParse(timestamp) ?? DateTime.now();
+        dt = _toLocal(DateTime.tryParse(timestamp) ?? DateTime.now());
       } else if (timestamp is num) {
-        dt = DateTime.fromMillisecondsSinceEpoch(timestamp.toInt());
+        dt = DateTime.fromMillisecondsSinceEpoch(timestamp.toInt(), isUtc: true).toLocal();
       } else {
         return 'Recently';
       }

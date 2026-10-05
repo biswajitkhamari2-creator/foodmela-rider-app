@@ -33,8 +33,8 @@ android {
         applicationId = "com.foodmela.driver"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
-        versionCode = 5
-        versionName = "2.0.0"
+        versionCode = 7
+        versionName = "2.0.2"
         multiDexEnabled = true
 
         ndk {

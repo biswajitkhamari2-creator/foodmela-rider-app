@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/theme/rider_gold.dart';
@@ -17,6 +18,7 @@ import 'package:food_track/core/services/rider_auth_service.dart';
 import 'package:food_track/features/calling/call_launcher.dart';
 import 'package:food_track/features/calling/call_models.dart';
 import 'package:food_track/features/calling/call_service.dart';
+import 'package:food_track/features/calling/incoming_call_guard.dart';
 import 'package:food_track/features/calling/incoming_call_screen.dart';
 import 'package:food_track/features/rider/active_delivery_screen.dart';
 import 'package:food_track/features/rider/rider_wallet_screen.dart';
@@ -109,7 +111,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       28;
 
   /// Multi-shape ownership check: matches whether the backend mirrored
-  /// partnerId, phone (10-digit / with 91), acceptedBy, or if claimed locally.
+  /// partnerId, phone (10-digit / with 91), acceptedBy, email, uid, or name.
   bool _isMine(Map<String, dynamic> data, [String? docId]) {
     final oid = (data['orderId'] ?? docId ?? '').toString();
     if (oid.isNotEmpty && _claimedOrderIds.contains(oid)) return true;
@@ -119,10 +121,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ? myPhoneDigits.substring(myPhoneDigits.length - 10)
         : myPhoneDigits;
 
+    final myUid = (widget.riderData?['uid'] as String? ??
+            widget.riderData?['id'] as String? ??
+            FirebaseAuth.instance.currentUser?.uid ??
+            '')
+        .trim()
+        .toLowerCase();
+
     final myKeys = <String>{
       _riderId.trim().toLowerCase(),
       _riderPartnerId.trim().toLowerCase(),
       _riderPhone.trim().toLowerCase(),
+      _riderEmail.trim().toLowerCase(),
+      _riderName.trim().toLowerCase(),
+      if (myUid.isNotEmpty) myUid,
       if (myPhoneDigits.isNotEmpty) myPhoneDigits.toLowerCase(),
       if (myPhone10.isNotEmpty) myPhone10.toLowerCase(),
     }..remove('');
@@ -131,8 +143,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final docPartnerId = (data['riderPartnerId'] as String? ?? data['partnerId'] as String? ?? '').trim();
     final docPhone = (data['riderPhone'] as String? ?? data['acceptedByPhone'] as String? ?? '').trim();
     final docAcceptedBy = (data['acceptedBy'] as String? ?? '').trim();
+    final docRiderEmail = (data['riderEmail'] as String? ?? '').trim();
+    final docRiderName = (data['riderName'] as String? ?? data['driverName'] as String? ?? '').trim();
+    final docRiderUid = (data['riderUid'] as String? ?? data['uid'] as String? ?? data['userId'] as String? ?? '').trim();
 
-    if (docRiderId.isEmpty && docPartnerId.isEmpty && docPhone.isEmpty && docAcceptedBy.isEmpty) {
+    if (docRiderId.isEmpty && docPartnerId.isEmpty && docPhone.isEmpty && docAcceptedBy.isEmpty && docRiderEmail.isEmpty && docRiderName.isEmpty && docRiderUid.isEmpty) {
       return false;
     }
 
@@ -156,6 +171,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       docPartnerId.toLowerCase(),
       docPhone.toLowerCase(),
       docAcceptedBy.toLowerCase(),
+      docRiderEmail.toLowerCase(),
+      docRiderName.toLowerCase(),
+      docRiderUid.toLowerCase(),
       if (docPhoneDigits.isNotEmpty) docPhoneDigits.toLowerCase(),
       if (docPhone10.isNotEmpty) docPhone10.toLowerCase(),
       if (docRiderDigits.isNotEmpty) docRiderDigits.toLowerCase(),
@@ -301,11 +319,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (!mounted || !_isOnline) return;
     final fresh = invites.where((i) =>
         i.status == CallStatus.ringing &&
+        i.callerRole != 'rider' &&
         !_shownCallIds.contains(i.callId) &&
         DateTime.now().difference(i.createdAt).inSeconds < 60);
     for (final invite in fresh) {
       _shownCallIds.add(invite.callId);
-      OrderRingtoneService.startRinging('call_$orderId');
+      if (!IncomingCallGuard.shouldShow(invite.callId)) continue;
       if (!mounted) return;
       Navigator.of(context)
           .push(MaterialPageRoute(
@@ -313,9 +332,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         builder: (_) => IncomingCallScreen(
           orderId: invite.orderId,
           callerLabel: invite.callerLabel,
+          callId: invite.callId,
           onAccept: () {
             Navigator.of(context).pop();
-            OrderRingtoneService.stopRinging('call_$orderId');
             CallLauncher.answerCall(
               context: context,
               invite: invite,
@@ -325,12 +344,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           },
           onDecline: () {
             Navigator.of(context).pop();
-            OrderRingtoneService.stopRinging('call_$orderId');
             CallLauncher.declineCall(invite);
           },
         ),
-      ))
-          .then((_) => OrderRingtoneService.stopRinging('call_$orderId'));
+      ));
     }
   }
 
@@ -366,6 +383,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (_repairingStream || !mounted) return;
     _repairingStream = true;
     try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await RiderAuthService.instance.recoverSessionFromFirebase();
+      }
       final ok = await RiderAuthService.refreshFirestoreToken();
       if (ok && mounted) {
         try { await _ordersSub?.cancel(); } catch (_) {}
@@ -450,7 +470,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       // Stale = placed >30 min ago (rider was offline then) → list only, silent
       final isFresh = now.difference(_orderTime(data)) < _freshOrderWindow;
       if (!isFresh) continue;
-      if (available && !_notifiedOrderIds.contains(orderId) && !_rejectedOrderIds.contains(orderId) && !IncomingOrderCall.isShown(orderId)) {
+      if (available && !_rejectedOrderIds.contains(orderId) && !IncomingOrderCall.isShown(orderId)) {
         _notifiedOrderIds.add(orderId);
         IncomingOrderCall.markShown(orderId);
         _saveNotifiedIds();

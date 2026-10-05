@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:food_track/core/theme/food_melaa_colors.dart';
 import 'package:food_track/core/theme/rider_theme.dart';
 import 'package:food_track/core/state/rider_theme_state.dart';
 import 'package:food_track/core/services/firebase_service.dart';
@@ -35,14 +34,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // MUST be registered at top-level before any Firebase init — handles FCM when app is killed
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  // Draw the first frame IMMEDIATELY — heavy init (permissions, Firebase,
-  // theme) runs after, so the user never stares at a blank native splash
-  // while the network is slow. FCM background handler above is the only
-  // thing that must run before runApp.
   riderThemeState = RiderThemeState.fallback();
+  try {
+    await FirebaseService.initialize().timeout(const Duration(seconds: 10));
+  } catch (e) {
+    debugPrint('Firebase init notice: $e');
+  }
   runApp(const FoodMelaRiderApp());
-  // Heavy init after first frame — failures are silent, features degrade
-  // gracefully (dashboard retries auth/stream on its own).
   _backgroundInit();
 }
 
@@ -191,57 +189,57 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Future<void> _checkSession() async {
-    // HARD CAP: the whole check must finish in 8s. Whatever hasn't answered
-    // by then (slow storage, hanging Firestore, dead network), the user
-    // gets the login screen — a stuck check can never hold the app hostage.
+    // 1. Prefs session check — instant paint, never throws gate to login if saved
     try {
-      await _checkSessionInner().timeout(const Duration(seconds: 8));
-    } catch (_) {
-      if (mounted && _loading) {
-        setState(() { _isLoggedIn = false; _loading = false; });
-      }
-    }
-  }
-
-  Future<void> _checkSessionInner() async {
-    // Fast path: saved session exists → show dashboard IMMEDIATELY (~1s),
-    // then silently refresh the token in the background. The dashboard
-    // tolerates a stale token (reconnecting banner) instead of a spinner.
-    var session = await RiderAuthService.instance
-        .getSession()
-        .timeout(const Duration(seconds: 3), onTimeout: () => null);
-
-    if (session != null && session['uid']!.isNotEmpty) {
-      if (mounted) {
-        setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
-      }
-      // Background refresh: fire-and-forget ONLY. The dashboard's own stream
-      // handles re-auth/retry on permission-denied. Awaiting it here would make
-      // the 8s hard-cap in _checkSession fire on slow networks (Firebase init
-      // still running from _backgroundInit), falsely nuking a valid session
-      // into the login screen — the exact auto-logout-again-and-again loop.
-      RiderAuthService.refreshFirestoreToken()
-          .then((ok) => debugPrint(ok ? 'Session refreshed in background' : 'Background refresh failed — dashboard will retry'))
-          // ignore: avoid_catches_without_on_clauses
-          .catchError((_) => debugPrint('Background refresh threw — dashboard will retry'));
-      return;
-    }
-
-    // No saved session — one short recovery attempt, then login screen.
-    try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.authStateChanges()
-            .firstWhere((u) => u != null)
-            .timeout(const Duration(seconds: 3));
+      final session = await RiderAuthService.instance.getSession();
+      debugPrint('[AUTHGATE] cold-start prefs uid=${session?['uid'] ?? 'EMPTY'}');
+      if (!mounted) return;
+      if (session != null && (session['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = session;
+          _loading = false;
+        });
+        if (FirebaseAuth.instance.currentUser == null) {
+          RiderAuthService.instance.recoverSessionFromFirebase().ignore();
+        } else {
+          RiderAuthService.refreshFirestoreToken().ignore();
+        }
+        return;
       }
     } catch (_) {}
-
-    session = await RiderAuthService.instance.recoverSessionFromFirebase();
-    if (!mounted) return;
-    if (session != null && session['uid']!.isNotEmpty) {
-      setState(() { _isLoggedIn = true; _riderData = session; _loading = false; });
-    } else {
-      setState(() { _isLoggedIn = false; _loading = false; });
+    // 2. Silent recovery / auto-reauthentication
+    try {
+      final recovered = await RiderAuthService.instance
+          .recoverSessionFromFirebase()
+          .timeout(const Duration(seconds: 15), onTimeout: () => null);
+      if (!mounted) return;
+      if (recovered != null && (recovered['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = recovered;
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    // 3. Ultimate fallback: check local session once more before login screen
+    try {
+      final fallbackSession = await RiderAuthService.instance.getSession();
+      if (mounted && fallbackSession != null && (fallbackSession['uid'] ?? '').isNotEmpty) {
+        setState(() {
+          _isLoggedIn = true;
+          _riderData = fallbackSession;
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isLoggedIn = false;
+        _loading = false;
+      });
     }
   }
 

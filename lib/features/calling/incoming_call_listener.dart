@@ -15,6 +15,7 @@ import 'call_models.dart';
 import 'call_service.dart';
 import 'call_session.dart';
 import 'call_waiting_banner.dart';
+import 'incoming_call_guard.dart';
 import 'incoming_call_screen.dart';
 
 mixin IncomingCallListener<T extends StatefulWidget> on State<T> {
@@ -50,6 +51,7 @@ mixin IncomingCallListener<T extends StatefulWidget> on State<T> {
     if (!mounted) return;
     final fresh = invites.where((i) =>
         i.status == CallStatus.ringing &&
+        i.callerRole != listenMyRole &&
         !_shownFor.contains(i.callId) &&
         // Ignore stale echo of the call already live on this device.
         !CallSession.isCurrent(i.orderId, i.callId) &&
@@ -88,11 +90,13 @@ mixin IncomingCallListener<T extends StatefulWidget> on State<T> {
   }
 
   void _showIncoming(CallInvite invite) {
+    if (!IncomingCallGuard.shouldShow(invite.callId)) return;
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => IncomingCallScreen(
         orderId: invite.orderId,
         callerLabel: invite.callerLabel,
+        callId: invite.callId,
         onAccept: () {
           Navigator.of(context).pop();
           CallLauncher.answerCall(

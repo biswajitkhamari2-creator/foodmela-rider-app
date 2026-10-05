@@ -10,6 +10,9 @@ class RiderThemeState extends ChangeNotifier {
   ThemeMode _mode;
   ThemeMode get mode => _mode;
 
+  /// Synchronous default for instant first frame — saved mode applied later.
+  factory RiderThemeState.fallback() => RiderThemeState._(ThemeMode.system);
+
   static Future<RiderThemeState> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();

@@ -13,14 +13,14 @@ class GoogleMapPickerScreen extends StatefulWidget {
 
 class _GoogleMapPickerScreenState extends State<GoogleMapPickerScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _houseNoController = TextEditingController(text: 'Flat 302, Building 4B');
+  final TextEditingController _houseNoController = TextEditingController(text: 'House / Shop No.');
   final TextEditingController _streetController = TextEditingController();
-  final TextEditingController _landmarkController = TextEditingController(text: 'Near Master Canteen');
-  final TextEditingController _instructionsController = TextEditingController(text: 'Ring doorbell twice on arrival');
+  final TextEditingController _landmarkController = TextEditingController(text: 'Near Birmaharajpur Bus Stand');
+  final TextEditingController _instructionsController = TextEditingController(text: 'Call on arrival');
 
-  String _currentAddress = 'Saheed Nagar, Janpath Road, Bhubaneswar';
-  double _lat = 20.2961;
-  double _lng = 85.8245;
+  String _currentAddress = 'Birmaharajpur Main Road, Subarnapur, Odisha - 767018';
+  double _lat = 20.8747;
+  double _lng = 84.0734;
   String _mapType = 'Normal';
 
   @override

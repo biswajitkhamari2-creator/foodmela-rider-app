@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -773,12 +774,16 @@ class RiderOrderDetailSheet extends StatelessWidget {
   static String _fullDateTime(dynamic raw) {
     try {
       DateTime? dt;
-      if (raw is DateTime) {
-        dt = raw;
+      if (raw is Timestamp) {
+        final d = raw.toDate();
+        dt = d.isUtc ? d.toLocal() : d;
+      } else if (raw is DateTime) {
+        dt = raw.isUtc ? raw.toLocal() : raw;
       } else if (raw is String && raw.trim().isNotEmpty) {
-        dt = DateTime.tryParse(raw.trim())?.toLocal();
+        final parsed = DateTime.tryParse(raw.trim());
+        dt = parsed == null ? null : (parsed.isUtc ? parsed.toLocal() : parsed);
       } else if (raw is num) {
-        dt = DateTime.fromMillisecondsSinceEpoch(raw.toInt()).toLocal();
+        dt = DateTime.fromMillisecondsSinceEpoch(raw.toInt(), isUtc: true).toLocal();
       }
       if (dt == null) return RiderOrderModel.formatTimestamp(raw);
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

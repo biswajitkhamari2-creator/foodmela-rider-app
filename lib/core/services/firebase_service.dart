@@ -395,13 +395,16 @@ class FirebaseService {
       final title = message.notification?.title ?? message.data['title'] ?? '';
       final body = message.notification?.body ?? message.data['body'] ?? '';
       debugPrint('🔔 [RIDER FOREGROUND FCM] type=$dataType title=$title');
-      // Incoming masked call — Firestore signaling shows the full screen;
-      // the push is a heads-up so it isn't missed in foreground.
+      // Incoming masked call — open the full-screen call UI immediately (WhatsApp style)
       if (dataType == 'incoming_call') {
         debugPrint('📞 [RIDER FOREGROUND] incoming call: ${message.data['orderId']}');
+        try {
+          final strMap = message.data.map((k, v) => MapEntry(k, v?.toString() ?? ''));
+          onVoiceCallTap?.call(strMap);
+        } catch (_) {}
         _showCallNotification(
           title: title.isNotEmpty ? title : '📞 Incoming call',
-          body: body.isNotEmpty ? body : 'Tap to answer (in-app)',
+          body: body.isNotEmpty ? body : 'Tap to answer',
           payload: message.data.toString(),
         );
         return;

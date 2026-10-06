@@ -518,6 +518,23 @@ class FirebaseService {
     });
   }
 
+  /// App launched (cold start / lock screen) by the incoming-call
+  /// notification's full-screen intent → open the call screen.
+  static Future<void> routeLaunchCallIfAny() async {
+    try {
+      final d = await _localNotifications.getNotificationAppLaunchDetails();
+      if (d?.didNotificationLaunchApp == true) {
+        final p = d!.notificationResponse?.payload ?? '';
+        if (p.contains('incoming_call')) {
+          await Future.delayed(const Duration(milliseconds: 1200));
+          onVoiceCallTap?.call(_strMap(p));
+        }
+      }
+    } catch (e) {
+      debugPrint('launch call route notice: $e');
+    }
+  }
+
   // ── Order Category Helper ────────────────────────────────────────────────
   /// Derives the dominant order category from real item data.
   /// Uses actual FoodItem.category values — no fake data.

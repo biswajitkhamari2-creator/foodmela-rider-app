@@ -86,6 +86,7 @@ Future<void> _backgroundInit() async {
         }
       } catch (_) {}
     };
+    FirebaseService.routeLaunchCallIfAny();
   } catch (e) {
     debugPrint('Init notice: $e');
   }

@@ -231,7 +231,7 @@ class RiderAuthService {
     final data = riderDoc.data()!;
 
     // ── Enforce role ─────────────────────────────────────────────────────
-    if (data['role'] != 'delivery_partner') {
+    if (data['role'] != 'delivery_partner' && data['role'] != 'rider') {
       await _auth.signOut();
       throw RiderAuthException('Access denied — delivery partner account required');
     }
@@ -254,18 +254,29 @@ class RiderAuthService {
 
     // ── Save session ─────────────────────────────────────────────────────
     final prefs = await SharedPreferences.getInstance();
+    // Same empty-overwrite guard as recoverSessionFromFirebase: a Firestore
+    // doc missing phone/name/partnerId must not blank an existing session.
+    final loginPhone = (data['phone'] as String? ?? '').isNotEmpty
+        ? (data['phone'] as String)
+        : phone;
+    final loginName = (data['name'] as String? ?? '').isNotEmpty
+        ? (data['name'] as String)
+        : (prefs.getString(_kRiderName) ?? '');
+    final loginPartner = (data['partnerId'] as String? ?? '').isNotEmpty
+        ? (data['partnerId'] as String)
+        : (prefs.getString(_kRiderPartnerId) ?? '');
     await prefs.setString(_kRiderIdentifier, phone.isNotEmpty ? phone : email);
     await prefs.setString(_kRiderPassword, password);
     await prefs.setString(_kRiderUid, uid);
     await prefs.setString(_kRiderEmail, email);
-    await prefs.setString(_kRiderPhone, data['phone'] as String? ?? phone);
-    await prefs.setString(_kRiderName, data['name'] as String? ?? '');
-    await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
+    await prefs.setString(_kRiderPhone, loginPhone);
+    await prefs.setString(_kRiderName, loginName);
+    await prefs.setString(_kRiderPartnerId, loginPartner);
     await prefs.remove(_kRiderApiToken);
     // Mint backend rider apiToken for /api/orders/* + /api/calls/*. A mint
     // failure (backend blip) must NOT sign out the good Firebase session —
     // enter the dashboard and let it retry silently.
-    final riderPhone = data['phone'] as String? ?? phone;
+    final riderPhone = loginPhone;
     final minted = await _mintRiderToken(signedInUser, phone: riderPhone);
     if (!minted) {
       refreshFirestoreToken().ignore();
@@ -273,8 +284,8 @@ class RiderAuthService {
     await prefs.setString(_kRiderUid, uid);
     await prefs.setString(_kRiderEmail, email);
     await prefs.setString(_kRiderPhone, riderPhone);
-    await prefs.setString(_kRiderName, data['name'] as String? ?? '');
-    await prefs.setString(_kRiderPartnerId, data['partnerId'] as String? ?? '');
+    await prefs.setString(_kRiderName, loginName);
+    await prefs.setString(_kRiderPartnerId, loginPartner);
 
     return {
       'uid': uid,
@@ -303,14 +314,26 @@ class RiderAuthService {
   Future<Map<String, String>?> getSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final uid = prefs.getString(_kRiderUid);
-      if (uid == null || uid.isEmpty) return null;
+      var uid = prefs.getString(_kRiderUid) ?? '';
+      final phone = prefs.getString(_kRiderPhone) ?? prefs.getString('rider_phone') ?? prefs.getString('phone') ?? prefs.getString('userPhone') ?? '';
+      final partnerId = prefs.getString(_kRiderPartnerId) ?? prefs.getString('rider_partner_id') ?? '';
+      final identifier = prefs.getString(_kRiderIdentifier) ?? prefs.getString('rider_identifier') ?? '';
+      final email = prefs.getString(_kRiderEmail) ?? prefs.getString('rider_email') ?? '';
+      final name = prefs.getString(_kRiderName) ?? prefs.getString('rider_name') ?? '';
+
+      if (uid.isEmpty) {
+        uid = partnerId.isNotEmpty ? partnerId : (phone.isNotEmpty ? phone : identifier);
+        if (uid.isNotEmpty) {
+          await prefs.setString(_kRiderUid, uid);
+        }
+      }
+      if (uid.isEmpty) return null;
       return {
         'uid': uid,
-        'email': prefs.getString(_kRiderEmail) ?? '',
-        'phone': prefs.getString(_kRiderPhone) ?? '',
-        'name': prefs.getString(_kRiderName) ?? '',
-        'partnerId': prefs.getString(_kRiderPartnerId) ?? '',
+        'email': email,
+        'phone': phone,
+        'name': name,
+        'partnerId': partnerId,
       };
     } catch (_) {
       return null;
@@ -382,12 +405,10 @@ class RiderAuthService {
         } catch (_) {}
       }
       if (!riderDoc.exists) {
-        final s = await getSession();
-        if (s != null) return s;
-        return null;
+        return await getSession();
       }
       final data = riderDoc.data();
-      if (data == null || data['role'] != 'delivery_partner') {
+      if (data == null || (data['role'] != 'delivery_partner' && data['role'] != 'rider')) {
         return await getSession();
       }
       if (data['approvalStatus'] == 'pending' ||
@@ -397,12 +418,29 @@ class RiderAuthService {
       }
 
       final email = (data['email'] as String? ?? user.email ?? '').toLowerCase();
-      final phone = data['phone'] as String? ?? '';
-      final name = data['name'] as String? ?? '';
-      final partnerId = data['partnerId'] as String? ?? '';
+      // NEVER overwrite a good saved value with an empty one. This is the
+      // auto-logout bug: the Firestore rider doc can legitimately come back
+      // with missing fields (a permission-denied read, a partially-migrated
+      // doc, or an offline cache miss), and writing '' over the stored phone /
+      // partnerId / name emptied the session — so the next cold start found no
+      // session and dumped the rider on the login screen.
       final prefs = await SharedPreferences.getInstance();
+      final savedPhone = prefs.getString(_kRiderPhone) ?? '';
+      final savedName = prefs.getString(_kRiderName) ?? '';
+      final savedPartner = prefs.getString(_kRiderPartnerId) ?? '';
+      final phone = (data['phone'] as String? ?? '').isNotEmpty
+          ? (data['phone'] as String)
+          : savedPhone;
+      final name = (data['name'] as String? ?? '').isNotEmpty
+          ? (data['name'] as String)
+          : savedName;
+      final partnerId = (data['partnerId'] as String? ?? '').isNotEmpty
+          ? (data['partnerId'] as String)
+          : savedPartner;
       await prefs.setString(_kRiderUid, user.uid);
-      await prefs.setString(_kRiderEmail, email);
+      await prefs.setString(_kRiderEmail, email.isNotEmpty
+          ? email
+          : (prefs.getString(_kRiderEmail) ?? ''));
       await prefs.setString(_kRiderPhone, phone);
       await prefs.setString(_kRiderName, name);
       await prefs.setString(_kRiderPartnerId, partnerId);
